@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>share-it</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 640px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5;
+    }
+    h1 { margin: 0 0 1rem; font-size: 1.5rem; }
+    .warn {
+      background: #fff4cc; color: #5a4500; border: 1px solid #e6c200;
+      padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1.5rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      .warn { background: #3a2f00; color: #ffe79a; border-color: #6e5a00; }
+    }
+
+    form { display: flex; flex-direction: column; gap: 0.75rem; }
+
+    /* Hide native picker; the label below is the visible drop zone. */
+    input[type=file] { position: absolute; width: 1px; height: 1px;
+                       opacity: 0; overflow: hidden; }
+    .drop {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.4rem; min-height: 160px; padding: 2rem 1rem;
+      border: 2px dashed #888; border-radius: 10px; cursor: pointer;
+      text-align: center; transition: background 0.15s, border-color 0.15s;
+    }
+    .drop:hover, .drop.drag { border-color: #2563eb; background: rgba(37,99,235,0.08); }
+    .drop .big { font-size: 1.1rem; font-weight: 600; }
+    .drop .sub { font-size: 0.85rem; opacity: 0.7; }
+    .drop .picked { font-size: 0.95rem; word-break: break-all; }
+
+    .actions { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+    button.primary {
+      padding: 0.4rem 0.9rem; font-size: 0.9rem; cursor: pointer;
+      border: 0; border-radius: 6px; background: #2563eb; color: white;
+    }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.ghost, a.ghost {
+      padding: 0.35rem 0.7rem; font-size: 0.85rem; cursor: pointer;
+      border: 1px solid #888; border-radius: 4px; background: transparent; color: inherit;
+      text-decoration: none;
+    }
+
+    .results { margin-top: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    .result {
+      padding: 0.75rem 1rem; border-radius: 6px;
+      background: #ecfdf5; color: #064e3b; border: 1px solid #6ee7b7;
+      word-break: break-all;
+    }
+    .result.err { background: #fef2f2; color: #7f1d1d; border-color: #fca5a5; }
+    .result.pending { background: transparent; color: inherit; border-color: #888; opacity: 0.85; }
+    @media (prefers-color-scheme: dark) {
+      .result { background: #042f2e; color: #a7f3d0; border-color: #047857; }
+      .result.err { background: #450a0a; color: #fecaca; border-color: #b91c1c; }
+    }
+    .row { display: flex; gap: 0.5rem; align-items: center; }
+    input[type=text] { flex: 1; padding: 0.4rem 0.6rem; font-size: 0.95rem;
+                       border: 1px solid #888; border-radius: 4px; background: transparent;
+                       color: inherit; }
+    .meta { font-size: 0.85rem; opacity: 0.75; margin-top: 0.25rem; }
+    .summary { display: flex; justify-content: space-between; align-items: center;
+               font-size: 0.9rem; opacity: 0.85; margin-top: 0.5rem; }
+    progress { width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>share-it</h1>
+  <div class="warn">
+    <strong>Warning:</strong> anyone with the link can download these files.
+    Files are deleted after {{ max_age_days }} day(s). Max size: {{ max_upload_mb }} MB each.
+    {% if allowed_exts %}Allowed: {{ allowed_exts | join(', ') }}.{% endif %}
+  </div>
+
+  <form id="f">
+    <input
+      type="file"
+      name="file"
+      id="file"
+      multiple
+      required
+      {% if allowed_exts %}accept="{% for e in allowed_exts %}.{{ e }}{% if not loop.last %},{% endif %}{% endfor %}"{% endif %}
+    />
+    <label class="drop" id="drop" for="file">
+      <span class="big" id="dropTitle">Drop files here or click to choose</span>
+      <span class="sub">{% if allowed_exts %}{{ allowed_exts | join(', ') }}{% endif %} &middot; up to {{ max_upload_mb }} MB each</span>
+      <span class="picked" id="picked" hidden></span>
+    </label>
+
+    <div class="actions">
+      <button class="ghost" type="button" id="clear" hidden>Clear</button>
+      <button class="primary" type="submit" id="btn" disabled>Upload</button>
+    </div>
+    <progress id="prog" value="0" max="100" hidden></progress>
+  </form>
+
+  <div id="out" class="results"></div>
+  <div id="summary" class="summary" hidden>
+    <span id="summaryText"></span>
+    <button class="ghost" type="button" id="copyAll">Copy all links</button>
+  </div>
+
+  <script>
+    const form = document.getElementById('f');
+    const btn = document.getElementById('btn');
+    const clearBtn = document.getElementById('clear');
+    const prog = document.getElementById('prog');
+    const out = document.getElementById('out');
+    const summary = document.getElementById('summary');
+    const summaryText = document.getElementById('summaryText');
+    const copyAllBtn = document.getElementById('copyAll');
+    const drop = document.getElementById('drop');
+    const fileInput = document.getElementById('file');
+    const picked = document.getElementById('picked');
+    const dropTitle = document.getElementById('dropTitle');
+
+    let uploadedUrls = [];
+
+    function showPicked() {
+      const files = Array.from(fileInput.files || []);
+      if (files.length) {
+        picked.hidden = false;
+        const total = files.reduce((s, f) => s + f.size, 0);
+        const names = files.length <= 3
+          ? files.map(f => f.name).join(', ')
+          : `${files[0].name}, ${files[1].name}, +${files.length - 2} more`;
+        picked.textContent = `${files.length} file${files.length > 1 ? 's' : ''}: ${names} (${(total/1024/1024).toFixed(2)} MB total)`;
+        dropTitle.textContent = 'Click to choose different files';
+        btn.disabled = false;
+        clearBtn.hidden = false;
+      } else {
+        picked.hidden = true;
+        dropTitle.textContent = 'Drop files here or click to choose';
+        btn.disabled = true;
+        clearBtn.hidden = true;
+      }
+    }
+    fileInput.addEventListener('change', showPicked);
+    clearBtn.addEventListener('click', () => { fileInput.value = ''; showPicked(); });
+
+    ['dragenter','dragover'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e => {
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        showPicked();
+      }
+    });
+
+    async function copyText(text) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (_) {}
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    function uploadOne(file, slot) {
+      return new Promise((resolve) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/upload');
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) {
+            const pct = (ev.loaded / ev.total) * 100;
+            const bar = slot.querySelector('progress');
+            if (bar) bar.value = pct;
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const j = JSON.parse(xhr.responseText);
+            const url = window.location.origin + j.path;
+            uploadedUrls.push(url);
+            slot.classList.remove('pending');
+            slot.innerHTML = `
+              <div><strong>${escapeHtml(j.filename)}</strong> uploaded.</div>
+              <div class="row" style="margin-top:.5rem">
+                <input type="text" readonly />
+                <button type="button" class="ghost copy">Copy</button>
+                <a class="ghost open" target="_blank" rel="noopener">Open</a>
+              </div>
+              <div class="meta">${(j.size/1024/1024).toFixed(2)} MB</div>
+            `;
+            const linkEl = slot.querySelector('input[type=text]');
+            linkEl.value = url;
+            slot.querySelector('.open').href = url;
+            const copyBtn = slot.querySelector('.copy');
+            copyBtn.onclick = async () => {
+              const ok = await copyText(url);
+              copyBtn.textContent = ok ? 'Copied' : 'Press Cmd/Ctrl+C';
+              if (!ok) { linkEl.focus(); linkEl.select(); }
+              setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+            };
+            resolve({ ok: true });
+          } else {
+            let msg = xhr.responseText;
+            try { msg = JSON.parse(xhr.responseText).detail || msg; } catch (_) {}
+            slot.classList.remove('pending');
+            slot.classList.add('err');
+            slot.innerHTML = `<div><strong>${escapeHtml(file.name)}</strong> failed (${xhr.status}): ${escapeHtml(msg)}</div>`;
+            resolve({ ok: false });
+          }
+        };
+        xhr.onerror = () => {
+          slot.classList.remove('pending');
+          slot.classList.add('err');
+          slot.innerHTML = `<div><strong>${escapeHtml(file.name)}</strong> failed: network error.</div>`;
+          resolve({ ok: false });
+        };
+        xhr.send(fd);
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      }[c]));
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const files = Array.from(fileInput.files || []);
+      if (!files.length) return;
+
+      btn.disabled = true;
+      clearBtn.hidden = true;
+      out.innerHTML = '';
+      summary.hidden = true;
+      uploadedUrls = [];
+
+      const slots = files.map((file) => {
+        const div = document.createElement('div');
+        div.className = 'result pending';
+        div.innerHTML = `
+          <div><strong>${escapeHtml(file.name)}</strong> uploading…</div>
+          <progress value="0" max="100" style="margin-top:.4rem"></progress>
+          <div class="meta">${(file.size/1024/1024).toFixed(2)} MB</div>
+        `;
+        out.appendChild(div);
+        return div;
+      });
+
+      let ok = 0, fail = 0;
+      for (let i = 0; i < files.length; i++) {
+        const r = await uploadOne(files[i], slots[i]);
+        if (r.ok) ok++; else fail++;
+      }
+
+      btn.disabled = false;
+      if (uploadedUrls.length) {
+        summary.hidden = false;
+        summaryText.textContent = `${ok} uploaded${fail ? `, ${fail} failed` : ''}.`;
+        copyAllBtn.onclick = async () => {
+          const text = uploadedUrls.join('\n');
+          const okCopy = await copyText(text);
+          copyAllBtn.textContent = okCopy ? 'Copied' : 'Press Cmd/Ctrl+C';
+          setTimeout(() => { copyAllBtn.textContent = 'Copy all links'; }, 2000);
+        };
+      }
+    });
+  </script>
+</body>
+</html>

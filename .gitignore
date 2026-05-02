@@ -1,0 +1,31 @@
+# Uploaded files
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local env
+.env
+.env.local
+*.log
+
+# Local-only docker-compose overrides
+docker-compose.override.yml
+docker-compose.override.yaml

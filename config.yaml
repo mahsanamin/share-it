@@ -1,0 +1,24 @@
+# share-it config
+
+# Where uploaded files are stored inside the container.
+# Mounted to ./data on the host via docker-compose.
+data_dir: /data
+
+# Files older than this are deleted on the next sweep.
+max_age_days: 2
+
+# How often the cleanup sweep runs.
+cleanup_interval_sec: 3600
+
+# Reject uploads larger than this.
+max_upload_mb: 1024
+
+# secrets.token_urlsafe(N) -> ~1.3 * N chars. 16 -> 22-char tokens.
+token_bytes: 16
+
+# File extensions accepted by /upload. Lowercase, no leading dot.
+# Empty list disables the check.
+allowed_extensions:
+  - jpg
+  - jpeg
+  - png
