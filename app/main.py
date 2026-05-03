@@ -6,6 +6,7 @@ import shutil
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -123,4 +124,5 @@ def download(token: str):
     if not files:
         raise HTTPException(404)
     f = files[0]
-    return FileResponse(f, filename=f.name)
+    disposition = f"inline; filename*=UTF-8''{quote(f.name)}"
+    return FileResponse(f, headers={"Content-Disposition": disposition})

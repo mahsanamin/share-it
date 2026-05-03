@@ -68,6 +68,77 @@
     .summary { display: flex; justify-content: space-between; align-items: center;
                font-size: 0.9rem; opacity: 0.85; margin-top: 0.5rem; }
     progress { width: 100%; }
+
+    .history { margin-top: 2.5rem; }
+    .history-head { display: flex; justify-content: space-between; align-items: baseline;
+                    gap: 0.5rem; margin-bottom: 0.25rem; }
+    .history-head h2 { font-size: 1rem; margin: 0; font-weight: 600; }
+    .history-head h2 .count { opacity: 0.55; font-weight: 400; margin-left: 0.35rem; }
+    .history-sub { font-size: 0.8rem; opacity: 0.6; margin-bottom: 0.6rem; }
+    .history-grid { display: grid; gap: 0.6rem;
+                    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .hist-item {
+      display: flex; flex-direction: column; gap: 0.35rem;
+      padding: 0.5rem; border: 1px solid rgba(127,127,127,0.4); border-radius: 6px;
+      background: rgba(127,127,127,0.05);
+    }
+    .hist-thumb-wrap { position: relative; width: 100%; aspect-ratio: 1 / 1; }
+    .hist-thumb {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 4px;
+      background: rgba(127,127,127,0.15); cursor: zoom-in; display: block;
+      transition: box-shadow 0.12s ease-out, filter 0.12s ease-out;
+    }
+    .hist-thumb:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.2); filter: brightness(1.05); }
+    .hist-thumb:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .hist-name { font-size: 0.8rem; line-height: 1.25; word-break: break-all;
+                 overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+                 -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .hist-meta { font-size: 0.72rem; opacity: 0.6; }
+    .hist-actions { display: flex; gap: 0.3rem; align-items: stretch; }
+    .hist-actions button, .hist-actions a {
+      flex: 1; padding: 0.2rem 0.3rem; font-size: 0.75rem;
+      border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
+      background: transparent; color: inherit; cursor: pointer;
+      text-align: center; text-decoration: none; line-height: 1.2;
+    }
+    .hist-actions .del { flex: 0 0 auto; padding: 0.2rem 0.45rem; opacity: 0.7; }
+    .hist-actions .del:hover { opacity: 1; }
+
+    #lightbox {
+      position: fixed; inset: 0; z-index: 1000;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.75rem; padding: 2rem;
+      background: rgba(0,0,0,0.85);
+      cursor: zoom-out;
+      animation: fadeIn 0.12s ease-out;
+    }
+    #lightbox[hidden] { display: none; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    #lightboxImg {
+      max-width: min(95vw, 1400px);
+      max-height: 82vh;
+      object-fit: contain;
+      border-radius: 4px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      cursor: default;
+      background: rgba(255,255,255,0.04);
+    }
+    #lightboxCaption {
+      color: rgba(255,255,255,0.85);
+      font-size: 0.9rem; text-align: center;
+      max-width: 80vw; word-break: break-all;
+      cursor: default;
+    }
+    #lightboxCaption .sub { opacity: 0.6; font-size: 0.8rem; margin-top: 0.15rem; }
+    #lightboxClose {
+      position: absolute; top: 0.75rem; right: 0.75rem;
+      width: 2.25rem; height: 2.25rem; border-radius: 50%;
+      background: rgba(255,255,255,0.1); color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      font-size: 1.4rem; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #lightboxClose:hover { background: rgba(255,255,255,0.2); }
   </style>
 </head>
 <body>
@@ -104,6 +175,23 @@
   <div id="summary" class="summary" hidden>
     <span id="summaryText"></span>
     <button class="ghost" type="button" id="copyAll">Copy all links</button>
+  </div>
+
+  <section class="history" id="history" hidden>
+    <div class="history-head">
+      <h2>Recent uploads<span class="count" id="historyCount"></span></h2>
+      <button class="ghost" type="button" id="clearHistory">Clear all</button>
+    </div>
+    <div class="history-sub">
+      Saved in this browser only. Entries auto-expire after {{ max_age_days }} day(s) — matching server cleanup.
+    </div>
+    <div class="history-grid" id="historyGrid"></div>
+  </section>
+
+  <div id="lightbox" role="dialog" aria-modal="true" aria-label="Image preview" hidden>
+    <button id="lightboxClose" type="button" aria-label="Close preview">×</button>
+    <img id="lightboxImg" alt="" />
+    <div id="lightboxCaption"></div>
   </div>
 
   <script>
@@ -196,25 +284,32 @@
             const j = JSON.parse(xhr.responseText);
             const url = window.location.origin + j.path;
             uploadedUrls.push(url);
+            addToStore({ path: j.path, filename: j.filename, size: j.size, uploadedAt: Date.now() });
             slot.classList.remove('pending');
             slot.innerHTML = `
               <div><strong>${escapeHtml(j.filename)}</strong> uploaded.</div>
               <div class="row" style="margin-top:.5rem">
                 <input type="text" readonly />
-                <button type="button" class="ghost copy">Copy</button>
+                <button type="button" class="ghost copy">Copy link</button>
                 <a class="ghost open" target="_blank" rel="noopener">Open</a>
               </div>
               <div class="meta">${(j.size/1024/1024).toFixed(2)} MB</div>
             `;
             const linkEl = slot.querySelector('input[type=text]');
             linkEl.value = url;
-            slot.querySelector('.open').href = url;
+            const openLink = slot.querySelector('.open');
+            openLink.href = url;
+            openLink.addEventListener('click', (e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+              e.preventDefault();
+              openLightbox(url, j.filename, j.size);
+            });
             const copyBtn = slot.querySelector('.copy');
             copyBtn.onclick = async () => {
               const ok = await copyText(url);
               copyBtn.textContent = ok ? 'Copied' : 'Press Cmd/Ctrl+C';
               if (!ok) { linkEl.focus(); linkEl.select(); }
-              setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+              setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 2000);
             };
             resolve({ ok: true });
           } else {
@@ -283,6 +378,202 @@
         };
       }
     });
+
+    // ----- Recent uploads (localStorage) -----
+    const STORAGE_KEY = 'shareit.history.v1';
+    const MAX_AGE_DAYS = {{ max_age_days }};
+    const MAX_AGE_MS = MAX_AGE_DAYS * 86400 * 1000;
+
+    const historySection = document.getElementById('history');
+    const historyGrid = document.getElementById('historyGrid');
+    const historyCount = document.getElementById('historyCount');
+    const clearHistoryBtn = document.getElementById('clearHistory');
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightboxImg');
+    const lightboxCaption = document.getElementById('lightboxCaption');
+    const lightboxClose = document.getElementById('lightboxClose');
+
+    function loadStore() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+      } catch (_) { return []; }
+    }
+    function saveStore(arr) {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); } catch (_) {}
+    }
+    function pruneStore() {
+      const now = Date.now();
+      const arr = loadStore().filter(it =>
+        it && it.path && typeof it.uploadedAt === 'number' && (now - it.uploadedAt < MAX_AGE_MS)
+      );
+      saveStore(arr);
+      return arr;
+    }
+    function addToStore(item) {
+      const arr = pruneStore().filter(it => it.path !== item.path);
+      arr.unshift(item);
+      saveStore(arr);
+      renderHistory();
+    }
+    function removeFromStore(path) {
+      saveStore(pruneStore().filter(it => it.path !== path));
+      renderHistory();
+    }
+
+    function fmtAge(ms) {
+      const s = Math.max(0, Math.floor(ms / 1000));
+      if (s < 60) return `just now`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}h ago`;
+      const d = Math.floor(h / 24);
+      return `${d}d ${h % 24}h ago`;
+    }
+    function fmtRemaining(ms) {
+      const s = Math.max(0, Math.floor(ms / 1000));
+      if (s < 60) return `<1m left`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m left`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}h left`;
+      const d = Math.floor(h / 24);
+      return `${d}d ${h % 24}h left`;
+    }
+
+    // ----- Lightbox -----
+    function openLightbox(url, filename, sizeBytes) {
+      lightboxImg.src = url;
+      lightboxImg.alt = filename || '';
+      lightboxCaption.innerHTML =
+        `<div>${escapeHtml(filename || '')}</div>` +
+        (sizeBytes ? `<div class="sub">${(sizeBytes/1024/1024).toFixed(2)} MB</div>` : '');
+      lightbox.hidden = false;
+      document.body.style.overflow = 'hidden';
+      lightboxClose.focus();
+    }
+    function closeLightbox() {
+      lightbox.hidden = true;
+      lightboxImg.removeAttribute('src');
+      lightboxCaption.textContent = '';
+      document.body.style.overflow = '';
+    }
+    lightbox.addEventListener('click', (e) => {
+      if (e.target === lightboxImg || e.target === lightboxCaption ||
+          lightboxCaption.contains(e.target)) return;
+      closeLightbox();
+    });
+    lightboxClose.addEventListener('click', closeLightbox);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !lightbox.hidden) closeLightbox();
+    });
+
+    // Batched auto-removal of entries whose server file has vanished.
+    const _staleQueue = new Set();
+    let _staleTimer = null;
+    function markStale(path) {
+      _staleQueue.add(path);
+      clearTimeout(_staleTimer);
+      _staleTimer = setTimeout(() => {
+        const drop = new Set(_staleQueue);
+        _staleQueue.clear();
+        saveStore(pruneStore().filter(it => !drop.has(it.path)));
+        renderHistory();
+      }, 300);
+    }
+
+    function renderHistory() {
+      const arr = pruneStore();
+      historySection.hidden = arr.length === 0;
+      historyCount.textContent = arr.length ? `(${arr.length})` : '';
+      historyGrid.innerHTML = '';
+
+      arr.forEach(it => {
+        const url = window.location.origin + it.path;
+        const card = document.createElement('div');
+        card.className = 'hist-item';
+        card.dataset.path = it.path;
+        card.dataset.uploadedAt = String(it.uploadedAt);
+        const age = Date.now() - it.uploadedAt;
+        const remain = MAX_AGE_MS - age;
+        card.innerHTML = `
+          <div class="hist-thumb-wrap">
+            <img class="hist-thumb" alt="" loading="lazy" />
+          </div>
+          <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
+          <div class="hist-meta">${fmtAge(age)} · ${fmtRemaining(remain)}</div>
+          <div class="hist-actions">
+            <button type="button" class="copy">Copy link</button>
+            <a class="open" target="_blank" rel="noopener">Open</a>
+            <button type="button" class="del" title="Remove from list">×</button>
+          </div>
+        `;
+        const img = card.querySelector('.hist-thumb');
+        const openLink = card.querySelector('.open');
+        const copyBtn = card.querySelector('.copy');
+        const delBtn = card.querySelector('.del');
+
+        img.src = url;
+        img.alt = it.filename;
+        img.tabIndex = 0;
+        openLink.href = url;
+
+        img.onerror = () => markStale(it.path);
+
+        const openZoom = () => openLightbox(url, it.filename, it.size);
+        img.addEventListener('click', openZoom);
+        img.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openZoom();
+          }
+        });
+        openLink.addEventListener('click', (e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          openZoom();
+        });
+
+        copyBtn.onclick = async (e) => {
+          const ok = await copyText(url);
+          const b = e.currentTarget;
+          const original = b.textContent;
+          b.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+          setTimeout(() => { b.textContent = original; }, 1500);
+        };
+        delBtn.onclick = () => removeFromStore(it.path);
+
+        historyGrid.appendChild(card);
+      });
+    }
+
+    clearHistoryBtn.addEventListener('click', () => {
+      if (!loadStore().length) return;
+      if (confirm('Clear all entries from this list? Files on the server are unaffected.')) {
+        saveStore([]);
+        renderHistory();
+      }
+    });
+
+    // Refresh relative timestamps each minute; expire entries that crossed the TTL.
+    setInterval(() => {
+      const cards = Array.from(document.querySelectorAll('.hist-item'));
+      let needsRerender = false;
+      cards.forEach(card => {
+        const t = parseInt(card.dataset.uploadedAt, 10);
+        if (!t) return;
+        const age = Date.now() - t;
+        const remain = MAX_AGE_MS - age;
+        if (remain <= 0) { needsRerender = true; return; }
+        const meta = card.querySelector('.hist-meta');
+        if (meta) meta.textContent = `${fmtAge(age)} · ${fmtRemaining(remain)}`;
+      });
+      if (needsRerender) renderHistory();
+    }, 60 * 1000);
+
+    renderHistory();
   </script>
 </body>
 </html>
