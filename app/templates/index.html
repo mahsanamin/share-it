@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>share-it</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <style>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
@@ -75,8 +76,25 @@
     .history-head h2 { font-size: 1rem; margin: 0; font-weight: 600; }
     .history-head h2 .count { opacity: 0.55; font-weight: 400; margin-left: 0.35rem; }
     .history-sub { font-size: 0.8rem; opacity: 0.6; margin-bottom: 0.6rem; }
-    .history-grid { display: grid; gap: 0.6rem;
-                    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .history-grid { display: flex; flex-direction: column; gap: 1.1rem; }
+    .hist-group { display: flex; flex-direction: column; gap: 0.45rem; }
+    .hist-group-head {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 0.5rem; font-size: 0.78rem; opacity: 0.85;
+      padding-bottom: 0.25rem;
+      border-bottom: 1px dashed rgba(127,127,127,0.3);
+    }
+    .hist-group-head > span:first-child { font-weight: 500; }
+    .hist-group-actions { display: flex; gap: 0.3rem; }
+    .hist-group-actions button {
+      padding: 0.15rem 0.5rem; font-size: 0.72rem;
+      border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
+      background: transparent; color: inherit; cursor: pointer;
+    }
+    .hist-group-grid {
+      display: grid; gap: 0.6rem;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
     .hist-item {
       display: flex; flex-direction: column; gap: 0.35rem;
       padding: 0.5rem; border: 1px solid rgba(127,127,127,0.4); border-radius: 6px;
@@ -90,6 +108,18 @@
     }
     .hist-thumb:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.2); filter: brightness(1.05); }
     .hist-thumb:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .hist-thumb-text {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 100%; border-radius: 4px;
+      background: linear-gradient(135deg, #475569, #1e293b);
+      color: rgba(255,255,255,0.92);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 700; font-size: 1.15rem; letter-spacing: 0.06em;
+      cursor: zoom-in;
+      transition: box-shadow 0.12s ease-out, filter 0.12s ease-out;
+    }
+    .hist-thumb-text:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.2); filter: brightness(1.15); }
+    .hist-thumb-text:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
     .hist-name { font-size: 0.8rem; line-height: 1.25; word-break: break-all;
                  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
                  -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -123,6 +153,64 @@
       cursor: default;
       background: rgba(255,255,255,0.04);
     }
+    #lightboxImg[hidden], #lightboxText[hidden] { display: none; }
+    #lightboxText {
+      margin: 0;
+      max-width: min(95vw, 900px); max-height: 82vh;
+      width: 100%;
+      padding: 1.25rem 1.5rem;
+      background: #1a1f2e; color: #e6e8eb;
+      border-radius: 8px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem; line-height: 1.5;
+      white-space: pre-wrap; word-break: break-word;
+      cursor: text;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      text-align: left;
+    }
+    #lightboxText.md {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 0.95rem; line-height: 1.7;
+      white-space: normal;
+    }
+    #lightboxText.md h1, #lightboxText.md h2, #lightboxText.md h3,
+    #lightboxText.md h4, #lightboxText.md h5, #lightboxText.md h6 {
+      margin: 1.1rem 0 0.5rem; line-height: 1.3; font-weight: 700;
+    }
+    #lightboxText.md h1 { font-size: 1.7rem; }
+    #lightboxText.md h2 { font-size: 1.4rem; }
+    #lightboxText.md h3 { font-size: 1.18rem; }
+    #lightboxText.md h4 { font-size: 1rem; }
+    #lightboxText.md p { margin: 0.55rem 0; }
+    #lightboxText.md ul, #lightboxText.md ol { padding-left: 1.6rem; margin: 0.55rem 0; }
+    #lightboxText.md ::marker { color: rgba(230,232,235,0.45); }
+    #lightboxText.md li { margin: 0.3rem 0; padding-left: 0.25rem; }
+    #lightboxText.md li.task-item { list-style: none; margin-left: -1.4rem; padding-left: 0; }
+    #lightboxText.md li.task-item input[type=checkbox] {
+      margin: 0 0.55rem 0 0; width: 1rem; height: 1rem;
+      vertical-align: -2px; accent-color: #2563eb;
+    }
+    #lightboxText.md a { color: #60a5fa; text-decoration: underline; text-underline-offset: 2px; }
+    #lightboxText.md strong { font-weight: 700; }
+    #lightboxText.md em { font-style: italic; }
+    #lightboxText.md code {
+      background: rgba(255,255,255,0.09); padding: 0.1rem 0.35rem;
+      border-radius: 3px; font-size: 0.88em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    #lightboxText.md pre {
+      background: #0d1117; padding: 0.85rem 1rem; border-radius: 5px;
+      overflow-x: auto; margin: 0.75rem 0;
+    }
+    #lightboxText.md pre code { background: transparent; padding: 0; font-size: 0.85rem; }
+    #lightboxText.md blockquote {
+      border-left: 3px solid rgba(255,255,255,0.22);
+      padding: 0.1rem 0 0.1rem 0.9rem;
+      margin: 0.6rem 0; color: rgba(230,232,235,0.72);
+    }
+    #lightboxText.md hr { border: 0; border-top: 1px solid rgba(255,255,255,0.15); margin: 1.1rem 0; }
+    #lightboxText.md img { max-width: 100%; border-radius: 4px; }
     #lightboxCaption {
       color: rgba(255,255,255,0.85);
       font-size: 0.9rem; text-align: center;
@@ -145,7 +233,12 @@
   <h1>share-it</h1>
   <div class="warn">
     <strong>Warning:</strong> anyone with the link can download these files.
-    Files are deleted after {{ max_age_days }} day(s). Max size: {{ max_upload_mb }} MB each.
+    Files are deleted after {{ max_age_days }} day(s).
+    {% if text_exts %}
+      Up to {{ max_upload_mb }} MB each for images, {{ max_upload_mb_text }} MB for text ({{ text_exts | join(', ') }}).
+    {% else %}
+      Max size: {{ max_upload_mb }} MB each.
+    {% endif %}
     {% if allowed_exts %}Allowed: {{ allowed_exts | join(', ') }}.{% endif %}
   </div>
 
@@ -174,7 +267,10 @@
   <div id="out" class="results"></div>
   <div id="summary" class="summary" hidden>
     <span id="summaryText"></span>
-    <button class="ghost" type="button" id="copyAll">Copy all links</button>
+    <span style="display:flex; gap:0.4rem">
+      <button class="ghost" type="button" id="copyAll">Copy all links</button>
+      <button class="ghost" type="button" id="dismissResults" title="Dismiss this batch">×</button>
+    </span>
   </div>
 
   <section class="history" id="history" hidden>
@@ -188,9 +284,10 @@
     <div class="history-grid" id="historyGrid"></div>
   </section>
 
-  <div id="lightbox" role="dialog" aria-modal="true" aria-label="Image preview" hidden>
+  <div id="lightbox" role="dialog" aria-modal="true" aria-label="File preview" hidden>
     <button id="lightboxClose" type="button" aria-label="Close preview">×</button>
-    <img id="lightboxImg" alt="" />
+    <img id="lightboxImg" alt="" hidden />
+    <pre id="lightboxText" hidden></pre>
     <div id="lightboxCaption"></div>
   </div>
 
@@ -266,7 +363,7 @@
       return ok;
     }
 
-    function uploadOne(file, slot) {
+    function uploadOne(file, slot, batchId) {
       return new Promise((resolve) => {
         const fd = new FormData();
         fd.append('file', file);
@@ -284,7 +381,7 @@
             const j = JSON.parse(xhr.responseText);
             const url = window.location.origin + j.path;
             uploadedUrls.push(url);
-            addToStore({ path: j.path, filename: j.filename, size: j.size, uploadedAt: Date.now() });
+            addToStore({ path: j.path, filename: j.filename, size: j.size, uploadedAt: Date.now(), batchId });
             slot.classList.remove('pending');
             slot.innerHTML = `
               <div><strong>${escapeHtml(j.filename)}</strong> uploaded.</div>
@@ -337,6 +434,11 @@
       }[c]));
     }
 
+    function newBatchId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return `b_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const files = Array.from(fileInput.files || []);
@@ -347,6 +449,7 @@
       out.innerHTML = '';
       summary.hidden = true;
       uploadedUrls = [];
+      const batchId = newBatchId();
 
       const slots = files.map((file) => {
         const div = document.createElement('div');
@@ -362,7 +465,7 @@
 
       let ok = 0, fail = 0;
       for (let i = 0; i < files.length; i++) {
-        const r = await uploadOne(files[i], slots[i]);
+        const r = await uploadOne(files[i], slots[i], batchId);
         if (r.ok) ok++; else fail++;
       }
 
@@ -384,14 +487,110 @@
     const MAX_AGE_DAYS = {{ max_age_days }};
     const MAX_AGE_MS = MAX_AGE_DAYS * 86400 * 1000;
 
+    const TEXT_EXTS = new Set({{ text_exts | tojson }});
+    function fileExt(name) {
+      const m = String(name || '').match(/\.([^.]+)$/);
+      return m ? m[1].toLowerCase() : '';
+    }
+    function isTextFile(name) { return TEXT_EXTS.has(fileExt(name)); }
+    function isMarkdown(name) { return fileExt(name) === 'md'; }
+
+    // Minimal CommonMark-flavored markdown renderer. Supports: ATX headers,
+    // ordered/unordered/task lists, bold (**), italic (*), inline code (`),
+    // fenced code blocks (```), links, blockquotes, horizontal rules.
+    // Does NOT support: nested lists, tables, reference links, setext headers.
+    function renderMarkdown(src) {
+      src = String(src || '').replace(/\r\n?/g, '\n');
+      const esc = (s) => s.replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      }[c]));
+
+      // Pull out fenced code blocks first so their content isn't markdown-parsed.
+      const codeBlocks = [];
+      src = src.replace(/```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+        codeBlocks.push({ lang, code: code.replace(/\n$/, '') });
+        return `\u0000CB${codeBlocks.length - 1}\u0000`;
+      });
+      src = esc(src);
+
+      const parseList = (lines) => {
+        const ordered = /^\s*\d+\.\s/.test(lines[0]);
+        const items = lines.map(line => {
+          const m = line.match(/^\s*(?:[-*+]|\d+\.)\s+([\s\S]*)$/);
+          let text = m ? m[1] : line;
+          const task = text.match(/^\[([ xX])\]\s+([\s\S]*)$/);
+          if (task) {
+            const checked = task[1].toLowerCase() === 'x';
+            return `<li class="task-item"><input type="checkbox"${checked ? ' checked' : ''} disabled>${task[2]}</li>`;
+          }
+          return `<li>${text}</li>`;
+        });
+        return `<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`;
+      };
+
+      const parseBlock = (block) => {
+        block = block.replace(/^\n+|\n+$/g, '');
+        if (!block) return '';
+
+        const cb = block.match(/^\u0000CB(\d+)\u0000$/);
+        if (cb) {
+          const b = codeBlocks[+cb[1]];
+          return `<pre><code${b.lang ? ` class="lang-${esc(b.lang)}"` : ''}>${esc(b.code)}</code></pre>`;
+        }
+
+        if (/^(?:---|\*\*\*|___)\s*$/.test(block)) return '<hr/>';
+
+        const h = block.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+        if (h && !block.includes('\n')) {
+          return `<h${h[1].length}>${h[2]}</h${h[1].length}>`;
+        }
+
+        const lines = block.split('\n');
+        if (lines.every(l => /^&gt;\s?/.test(l))) {
+          const inner = lines.map(l => l.replace(/^&gt;\s?/, '')).join('\n');
+          return `<blockquote>${parseBlock(inner)}</blockquote>`;
+        }
+
+        if (lines.every(l => /^\s*(?:[-*+]|\d+\.)\s/.test(l))) {
+          return parseList(lines);
+        }
+
+        return `<p>${block.replace(/\n/g, '<br/>')}</p>`;
+      };
+
+      let html = src.split(/\n{2,}/).map(parseBlock).join('\n');
+
+      html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+      html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, '$1<em>$2</em>');
+      html = html.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_, alt, url, title) => {
+        const safe = /^(https?:|\/)/i.test(url) ? url : '';
+        return `<img src="${safe}" alt="${alt}"${title ? ` title="${title}"` : ''}/>`;
+      });
+      html = html.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_, text, url, title) => {
+        const safe = /^(https?:|mailto:|\/|#)/i.test(url) ? url : '#';
+        return `<a href="${safe}" target="_blank" rel="noopener"${title ? ` title="${title}"` : ''}>${text}</a>`;
+      });
+
+      return html;
+    }
+
     const historySection = document.getElementById('history');
     const historyGrid = document.getElementById('historyGrid');
     const historyCount = document.getElementById('historyCount');
     const clearHistoryBtn = document.getElementById('clearHistory');
     const lightbox = document.getElementById('lightbox');
     const lightboxImg = document.getElementById('lightboxImg');
+    const lightboxText = document.getElementById('lightboxText');
     const lightboxCaption = document.getElementById('lightboxCaption');
     const lightboxClose = document.getElementById('lightboxClose');
+    const dismissResultsBtn = document.getElementById('dismissResults');
+
+    dismissResultsBtn.addEventListener('click', () => {
+      out.innerHTML = '';
+      summary.hidden = true;
+      uploadedUrls = [];
+    });
 
     function loadStore() {
       try {
@@ -444,25 +643,61 @@
     }
 
     // ----- Lightbox -----
-    function openLightbox(url, filename, sizeBytes) {
-      lightboxImg.src = url;
-      lightboxImg.alt = filename || '';
+    let _lightboxAbort = null;
+    async function openLightbox(url, filename, sizeBytes) {
       lightboxCaption.innerHTML =
         `<div>${escapeHtml(filename || '')}</div>` +
         (sizeBytes ? `<div class="sub">${(sizeBytes/1024/1024).toFixed(2)} MB</div>` : '');
       lightbox.hidden = false;
       document.body.style.overflow = 'hidden';
       lightboxClose.focus();
+
+      if (_lightboxAbort) _lightboxAbort.abort();
+      if (isTextFile(filename)) {
+        lightboxImg.hidden = true;
+        lightboxImg.removeAttribute('src');
+        lightboxText.hidden = false;
+        lightboxText.classList.remove('md');
+        lightboxText.textContent = 'Loading…';
+        _lightboxAbort = new AbortController();
+        try {
+          const resp = await fetch(url, { signal: _lightboxAbort.signal });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const body = await resp.text();
+          if (isMarkdown(filename)) {
+            lightboxText.classList.add('md');
+            lightboxText.innerHTML = renderMarkdown(body);
+          } else {
+            lightboxText.textContent = body;
+          }
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            lightboxText.textContent = `(failed to load: ${err.message})`;
+          }
+        }
+      } else {
+        lightboxText.hidden = true;
+        lightboxText.textContent = '';
+        lightboxImg.hidden = false;
+        lightboxImg.alt = filename || '';
+        lightboxImg.src = url;
+      }
     }
     function closeLightbox() {
+      if (_lightboxAbort) { _lightboxAbort.abort(); _lightboxAbort = null; }
       lightbox.hidden = true;
       lightboxImg.removeAttribute('src');
+      lightboxImg.hidden = true;
+      lightboxText.textContent = '';
+      lightboxText.classList.remove('md');
+      lightboxText.hidden = true;
       lightboxCaption.textContent = '';
       document.body.style.overflow = '';
     }
     lightbox.addEventListener('click', (e) => {
-      if (e.target === lightboxImg || e.target === lightboxCaption ||
-          lightboxCaption.contains(e.target)) return;
+      if (e.target === lightboxImg ||
+          e.target === lightboxText || lightboxText.contains(e.target) ||
+          e.target === lightboxCaption || lightboxCaption.contains(e.target)) return;
       closeLightbox();
     });
     lightboxClose.addEventListener('click', closeLightbox);
@@ -484,68 +719,131 @@
       }, 300);
     }
 
+    function makeHistCard(it) {
+      const url = window.location.origin + it.path;
+      const ext = fileExt(it.filename);
+      const isText = TEXT_EXTS.has(ext);
+
+      const card = document.createElement('div');
+      card.className = 'hist-item';
+      card.dataset.path = it.path;
+      card.dataset.uploadedAt = String(it.uploadedAt);
+      const age = Date.now() - it.uploadedAt;
+      const remain = MAX_AGE_MS - age;
+      const thumbHtml = isText
+        ? `<div class="hist-thumb hist-thumb-text" tabindex="0">${escapeHtml(ext.toUpperCase() || 'TXT')}</div>`
+        : `<img class="hist-thumb" alt="" loading="lazy" />`;
+
+      card.innerHTML = `
+        <div class="hist-thumb-wrap">${thumbHtml}</div>
+        <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
+        <div class="hist-meta">${fmtAge(age)} · ${fmtRemaining(remain)}</div>
+        <div class="hist-actions">
+          <button type="button" class="copy">Copy link</button>
+          <a class="open" target="_blank" rel="noopener">Open</a>
+          <button type="button" class="del" title="Remove from list">×</button>
+        </div>
+      `;
+      const thumb = card.querySelector('.hist-thumb');
+      const openLink = card.querySelector('.open');
+      const copyBtn = card.querySelector('.copy');
+      const delBtn = card.querySelector('.del');
+
+      openLink.href = url;
+      if (!isText) {
+        thumb.src = url;
+        thumb.alt = it.filename;
+        thumb.tabIndex = 0;
+        thumb.onerror = () => markStale(it.path);
+      }
+
+      const openZoom = () => openLightbox(url, it.filename, it.size);
+      thumb.addEventListener('click', openZoom);
+      thumb.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openZoom();
+        }
+      });
+      openLink.addEventListener('click', (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        openZoom();
+      });
+
+      copyBtn.onclick = async (e) => {
+        const ok = await copyText(url);
+        const b = e.currentTarget;
+        const original = b.textContent;
+        b.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+        setTimeout(() => { b.textContent = original; }, 1500);
+      };
+      delBtn.onclick = () => removeFromStore(it.path);
+
+      return card;
+    }
+
     function renderHistory() {
       const arr = pruneStore();
       historySection.hidden = arr.length === 0;
       historyCount.textContent = arr.length ? `(${arr.length})` : '';
       historyGrid.innerHTML = '';
 
+      // Group consecutive entries that share a batchId. Older entries with no
+      // batchId render as singleton groups (one card per group).
+      const groups = [];
+      let current = null;
       arr.forEach(it => {
-        const url = window.location.origin + it.path;
-        const card = document.createElement('div');
-        card.className = 'hist-item';
-        card.dataset.path = it.path;
-        card.dataset.uploadedAt = String(it.uploadedAt);
-        const age = Date.now() - it.uploadedAt;
-        const remain = MAX_AGE_MS - age;
-        card.innerHTML = `
-          <div class="hist-thumb-wrap">
-            <img class="hist-thumb" alt="" loading="lazy" />
-          </div>
-          <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
-          <div class="hist-meta">${fmtAge(age)} · ${fmtRemaining(remain)}</div>
-          <div class="hist-actions">
-            <button type="button" class="copy">Copy link</button>
-            <a class="open" target="_blank" rel="noopener">Open</a>
-            <button type="button" class="del" title="Remove from list">×</button>
-          </div>
+        const bid = it.batchId || `_solo_${it.path}`;
+        if (!current || current.batchId !== bid) {
+          current = { batchId: bid, items: [] };
+          groups.push(current);
+        }
+        current.items.push(it);
+      });
+
+      groups.forEach(group => {
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'hist-group';
+
+        const newest = group.items.reduce((a, b) => a.uploadedAt > b.uploadedAt ? a : b);
+        const headLabel = group.items.length > 1
+          ? `${group.items.length} files · ${fmtAge(Date.now() - newest.uploadedAt)}`
+          : fmtAge(Date.now() - newest.uploadedAt);
+
+        const head = document.createElement('div');
+        head.className = 'hist-group-head';
+        head.innerHTML = `
+          <span>${headLabel}</span>
+          <span class="hist-group-actions">
+            ${group.items.length > 1 ? '<button type="button" class="copy-group">Copy all</button>' : ''}
+            <button type="button" class="del-group" title="Remove ${group.items.length > 1 ? 'group' : 'entry'} from list">Close</button>
+          </span>
         `;
-        const img = card.querySelector('.hist-thumb');
-        const openLink = card.querySelector('.open');
-        const copyBtn = card.querySelector('.copy');
-        const delBtn = card.querySelector('.del');
 
-        img.src = url;
-        img.alt = it.filename;
-        img.tabIndex = 0;
-        openLink.href = url;
+        const grid = document.createElement('div');
+        grid.className = 'hist-group-grid';
+        group.items.forEach(it => grid.appendChild(makeHistCard(it)));
 
-        img.onerror = () => markStale(it.path);
-
-        const openZoom = () => openLightbox(url, it.filename, it.size);
-        img.addEventListener('click', openZoom);
-        img.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            openZoom();
-          }
-        });
-        openLink.addEventListener('click', (e) => {
-          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-          e.preventDefault();
-          openZoom();
-        });
-
-        copyBtn.onclick = async (e) => {
-          const ok = await copyText(url);
-          const b = e.currentTarget;
-          const original = b.textContent;
-          b.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
-          setTimeout(() => { b.textContent = original; }, 1500);
+        const copyGroupBtn = head.querySelector('.copy-group');
+        if (copyGroupBtn) {
+          copyGroupBtn.onclick = async (e) => {
+            const links = group.items.map(it => window.location.origin + it.path).join('\n');
+            const ok = await copyText(links);
+            const b = e.currentTarget;
+            b.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+            setTimeout(() => { b.textContent = 'Copy all'; }, 1500);
+          };
+        }
+        head.querySelector('.del-group').onclick = () => {
+          const paths = new Set(group.items.map(it => it.path));
+          saveStore(pruneStore().filter(it => !paths.has(it.path)));
+          renderHistory();
         };
-        delBtn.onclick = () => removeFromStore(it.path);
 
-        historyGrid.appendChild(card);
+        groupDiv.appendChild(head);
+        groupDiv.appendChild(grid);
+        historyGrid.appendChild(groupDiv);
       });
     }
 

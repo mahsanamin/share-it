@@ -10,8 +10,11 @@ max_age_days: 2
 # How often the cleanup sweep runs.
 cleanup_interval_sec: 3600
 
-# Reject uploads larger than this.
+# Reject uploads larger than this (applies to anything not in text_extensions).
 max_upload_mb: 1024
+
+# Smaller cap for files listed in text_extensions.
+max_upload_mb_text: 2
 
 # secrets.token_urlsafe(N) -> ~1.3 * N chars. 16 -> 22-char tokens.
 token_bytes: 16
@@ -22,3 +25,10 @@ allowed_extensions:
   - jpg
   - jpeg
   - png
+  - txt
+  - md
+
+# Subset of allowed_extensions treated as text — limited by max_upload_mb_text.
+text_extensions:
+  - txt
+  - md

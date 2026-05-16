@@ -21,11 +21,14 @@ DATA_DIR = Path(cfg.get("data_dir", "/data"))
 MAX_AGE_DAYS = float(cfg.get("max_age_days", 2))
 CLEANUP_INTERVAL_SEC = int(cfg.get("cleanup_interval_sec", 3600))
 MAX_UPLOAD_MB = int(cfg.get("max_upload_mb", 1024))
+MAX_UPLOAD_MB_TEXT = int(cfg.get("max_upload_mb_text", MAX_UPLOAD_MB))
 TOKEN_BYTES = int(cfg.get("token_bytes", 16))
 ALLOWED_EXTS = {e.lower().lstrip(".") for e in (cfg.get("allowed_extensions") or [])}
+TEXT_EXTS = {e.lower().lstrip(".") for e in (cfg.get("text_extensions") or [])}
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+FAVICON_PATH = Path(__file__).parent / "favicon.svg"
 
 
 async def cleanup_loop():
@@ -70,6 +73,16 @@ app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 
+@app.get("/favicon.svg")
+def favicon():
+    return FileResponse(FAVICON_PATH, media_type="image/svg+xml")
+
+
+@app.get("/favicon.ico")
+def favicon_ico():
+    return FileResponse(FAVICON_PATH, media_type="image/svg+xml")
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     return templates.TemplateResponse(
@@ -77,8 +90,10 @@ def index(request: Request):
         {
             "request": request,
             "max_upload_mb": MAX_UPLOAD_MB,
+            "max_upload_mb_text": MAX_UPLOAD_MB_TEXT,
             "max_age_days": MAX_AGE_DAYS,
             "allowed_exts": sorted(ALLOWED_EXTS),
+            "text_exts": sorted(TEXT_EXTS),
         },
     )
 
@@ -96,7 +111,8 @@ async def upload(file: UploadFile = File(...)):
     folder.mkdir(parents=True, exist_ok=False)
 
     dest = folder / filename
-    limit = MAX_UPLOAD_MB * 1024 * 1024
+    limit_mb = MAX_UPLOAD_MB_TEXT if ext in TEXT_EXTS else MAX_UPLOAD_MB
+    limit = limit_mb * 1024 * 1024
     written = 0
 
     try:
@@ -104,7 +120,7 @@ async def upload(file: UploadFile = File(...)):
             while chunk := await file.read(1024 * 1024):
                 written += len(chunk)
                 if written > limit:
-                    raise HTTPException(413, f"File exceeds {MAX_UPLOAD_MB} MB")
+                    raise HTTPException(413, f"File exceeds {limit_mb} MB")
                 out.write(chunk)
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
