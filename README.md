@@ -15,7 +15,7 @@ Run `share-it` on any box on your network — your dev machine, a NAS, a VPS, a 
 - Drag-and-drop, multi-file uploads, per-file links + Copy-all
 - Random tokenized URLs (`/f/<token>`) — not guessable, not enumerable
 - Auto-expiry — files older than `max_age_days` get swept on a schedule
-- Size cap and allowed-extension whitelist via `config.yaml`
+- Size cap and blocked-extension list (executables/installers) via `config.yaml`
 - Single FastAPI process, runs in Docker, ~150 lines of Python
 
 ## Requirements
@@ -40,7 +40,15 @@ make down
 
 ## Configure
 
-Edit `config.yaml` (max age, max upload size, allowed extensions, cleanup interval), then `make restart`. Change the host port via the `ports:` line in `docker-compose.yml`.
+Edit `config.yaml` for app behaviour (max age, max upload size, blocked extensions, cleanup interval), then `make restart`.
+
+The host-port binding lives in a gitignored `.env`. Copy the template once:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` to change `BIND_ADDR` (default `127.0.0.1`) or `HOST_PORT` (default `3050`) — e.g. set `BIND_ADDR=0.0.0.0` to expose on all interfaces, or to a specific Tailscale/LAN IP. Run `make restart` after editing.
 
 ## Security
 

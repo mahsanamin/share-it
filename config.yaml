@@ -19,16 +19,71 @@ max_upload_mb_text: 2
 # secrets.token_urlsafe(N) -> ~1.3 * N chars. 16 -> 22-char tokens.
 token_bytes: 16
 
-# File extensions accepted by /upload. Lowercase, no leading dot.
-# Empty list disables the check.
-allowed_extensions:
-  - jpg
-  - jpeg
-  - png
-  - txt
-  - md
+# File extensions rejected by /upload. Lowercase, no leading dot.
+# Empty list disables the check. Default: executables, installers, and
+# OS-level scripts that auto-run on click.
+blocked_extensions:
+  # Windows executables / installers / shortcuts
+  - exe
+  - msi
+  - scr
+  - com
+  - bat
+  - cmd
+  - pif
+  - hta
+  - cpl
+  - msc
+  - lnk
+  - reg
+  # Windows scripts that double-click-execute
+  - vbs
+  - vbe
+  - wsf
+  - wsh
+  - ps1
+  - psm1
+  # macOS bundles / installers
+  - app
+  - dmg
+  - pkg
+  - command
+  # Linux packages / runnables
+  - deb
+  - rpm
+  - appimage
+  - run
+  - snap
+  - flatpak
+  # Mobile app packages
+  - apk
+  - aab
+  - ipa
+  - xapk
+  # Java runnables
+  - jar
+  - war
+  - ear
+  # Native shared libraries
+  - dll
+  - so
+  - dylib
 
-# Subset of allowed_extensions treated as text — limited by max_upload_mb_text.
+# Files treated as text — limited by max_upload_mb_text and previewed inline.
 text_extensions:
   - txt
   - md
+
+# Files treated as images — rendered as thumbnails in the history grid and
+# inline in the lightbox. Anything outside this list (and text_extensions)
+# shows a generic file badge instead.
+image_extensions:
+  - jpg
+  - jpeg
+  - png
+  - gif
+  - webp
+  - svg
+  - bmp
+  - ico
+  - avif

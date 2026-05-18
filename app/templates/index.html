@@ -235,11 +235,11 @@
     <strong>Warning:</strong> anyone with the link can download these files.
     Files are deleted after {{ max_age_days }} day(s).
     {% if text_exts %}
-      Up to {{ max_upload_mb }} MB each for images, {{ max_upload_mb_text }} MB for text ({{ text_exts | join(', ') }}).
+      Up to {{ max_upload_mb }} MB each, {{ max_upload_mb_text }} MB for text ({{ text_exts | join(', ') }}).
     {% else %}
       Max size: {{ max_upload_mb }} MB each.
     {% endif %}
-    {% if allowed_exts %}Allowed: {{ allowed_exts | join(', ') }}.{% endif %}
+    {% if blocked_exts %}Executables and installers are blocked.{% endif %}
   </div>
 
   <form id="f">
@@ -249,11 +249,10 @@
       id="file"
       multiple
       required
-      {% if allowed_exts %}accept="{% for e in allowed_exts %}.{{ e }}{% if not loop.last %},{% endif %}{% endfor %}"{% endif %}
     />
     <label class="drop" id="drop" for="file">
       <span class="big" id="dropTitle">Drop files here or click to choose</span>
-      <span class="sub">{% if allowed_exts %}{{ allowed_exts | join(', ') }}{% endif %} &middot; up to {{ max_upload_mb }} MB each</span>
+      <span class="sub">Any file type except executables &middot; up to {{ max_upload_mb }} MB each</span>
       <span class="picked" id="picked" hidden></span>
     </label>
 
@@ -396,11 +395,15 @@
             linkEl.value = url;
             const openLink = slot.querySelector('.open');
             openLink.href = url;
-            openLink.addEventListener('click', (e) => {
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-              e.preventDefault();
-              openLightbox(url, j.filename, j.size);
-            });
+            const ext = fileExt(j.filename);
+            const canPreview = IMAGE_EXTS.has(ext) || TEXT_EXTS.has(ext);
+            if (canPreview) {
+              openLink.addEventListener('click', (e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                e.preventDefault();
+                openLightbox(url, j.filename, j.size);
+              });
+            }
             const copyBtn = slot.querySelector('.copy');
             copyBtn.onclick = async () => {
               const ok = await copyText(url);
@@ -488,11 +491,13 @@
     const MAX_AGE_MS = MAX_AGE_DAYS * 86400 * 1000;
 
     const TEXT_EXTS = new Set({{ text_exts | tojson }});
+    const IMAGE_EXTS = new Set({{ image_exts | tojson }});
     function fileExt(name) {
       const m = String(name || '').match(/\.([^.]+)$/);
       return m ? m[1].toLowerCase() : '';
     }
     function isTextFile(name) { return TEXT_EXTS.has(fileExt(name)); }
+    function isImageFile(name) { return IMAGE_EXTS.has(fileExt(name)); }
     function isMarkdown(name) { return fileExt(name) === 'md'; }
 
     // Minimal CommonMark-flavored markdown renderer. Supports: ATX headers,
@@ -722,7 +727,7 @@
     function makeHistCard(it) {
       const url = window.location.origin + it.path;
       const ext = fileExt(it.filename);
-      const isText = TEXT_EXTS.has(ext);
+      const isImage = IMAGE_EXTS.has(ext);
 
       const card = document.createElement('div');
       card.className = 'hist-item';
@@ -730,9 +735,10 @@
       card.dataset.uploadedAt = String(it.uploadedAt);
       const age = Date.now() - it.uploadedAt;
       const remain = MAX_AGE_MS - age;
-      const thumbHtml = isText
-        ? `<div class="hist-thumb hist-thumb-text" tabindex="0">${escapeHtml(ext.toUpperCase() || 'TXT')}</div>`
-        : `<img class="hist-thumb" alt="" loading="lazy" />`;
+      const badge = (ext || 'FILE').toUpperCase().slice(0, 5);
+      const thumbHtml = isImage
+        ? `<img class="hist-thumb" alt="" loading="lazy" />`
+        : `<div class="hist-thumb hist-thumb-text" tabindex="0">${escapeHtml(badge)}</div>`;
 
       card.innerHTML = `
         <div class="hist-thumb-wrap">${thumbHtml}</div>
@@ -750,26 +756,31 @@
       const delBtn = card.querySelector('.del');
 
       openLink.href = url;
-      if (!isText) {
+      if (isImage) {
         thumb.src = url;
         thumb.alt = it.filename;
         thumb.tabIndex = 0;
         thumb.onerror = () => markStale(it.path);
       }
 
+      const canPreview = isImage || TEXT_EXTS.has(ext);
       const openZoom = () => openLightbox(url, it.filename, it.size);
-      thumb.addEventListener('click', openZoom);
-      thumb.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+      if (canPreview) {
+        thumb.addEventListener('click', openZoom);
+        thumb.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openZoom();
+          }
+        });
+        openLink.addEventListener('click', (e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
           e.preventDefault();
           openZoom();
-        }
-      });
-      openLink.addEventListener('click', (e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-        e.preventDefault();
-        openZoom();
-      });
+        });
+      } else {
+        thumb.style.cursor = 'default';
+      }
 
       copyBtn.onclick = async (e) => {
         const ok = await copyText(url);

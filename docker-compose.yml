@@ -4,7 +4,7 @@ services:
     container_name: share-it
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3050:3050"
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-3050}:3050"
     volumes:
       - ./data:/data
       - ./config.yaml:/app/config.yaml:ro

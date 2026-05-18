@@ -23,8 +23,9 @@ CLEANUP_INTERVAL_SEC = int(cfg.get("cleanup_interval_sec", 3600))
 MAX_UPLOAD_MB = int(cfg.get("max_upload_mb", 1024))
 MAX_UPLOAD_MB_TEXT = int(cfg.get("max_upload_mb_text", MAX_UPLOAD_MB))
 TOKEN_BYTES = int(cfg.get("token_bytes", 16))
-ALLOWED_EXTS = {e.lower().lstrip(".") for e in (cfg.get("allowed_extensions") or [])}
+BLOCKED_EXTS = {e.lower().lstrip(".") for e in (cfg.get("blocked_extensions") or [])}
 TEXT_EXTS = {e.lower().lstrip(".") for e in (cfg.get("text_extensions") or [])}
+IMAGE_EXTS = {e.lower().lstrip(".") for e in (cfg.get("image_extensions") or [])}
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -92,8 +93,9 @@ def index(request: Request):
             "max_upload_mb": MAX_UPLOAD_MB,
             "max_upload_mb_text": MAX_UPLOAD_MB_TEXT,
             "max_age_days": MAX_AGE_DAYS,
-            "allowed_exts": sorted(ALLOWED_EXTS),
+            "blocked_exts": sorted(BLOCKED_EXTS),
             "text_exts": sorted(TEXT_EXTS),
+            "image_exts": sorted(IMAGE_EXTS),
         },
     )
 
@@ -102,9 +104,8 @@ def index(request: Request):
 async def upload(file: UploadFile = File(...)):
     filename = Path(file.filename or "file").name or "file"
     ext = Path(filename).suffix.lower().lstrip(".")
-    if ALLOWED_EXTS and ext not in ALLOWED_EXTS:
-        allowed = ", ".join(sorted(ALLOWED_EXTS)) or "(none)"
-        raise HTTPException(415, f"File type '.{ext or '?'}' not allowed. Allowed: {allowed}")
+    if ext in BLOCKED_EXTS:
+        raise HTTPException(415, f"File type '.{ext}' is not allowed (executables and installers are blocked).")
 
     token = secrets.token_urlsafe(TOKEN_BYTES)
     folder = DATA_DIR / token
