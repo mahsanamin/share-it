@@ -53,10 +53,15 @@
 
     .results { margin-top: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
     .result {
-      padding: 0.75rem 1rem; border-radius: 6px;
+      padding: 0.5rem 0.7rem; border-radius: 6px;
       background: #ecfdf5; color: #064e3b; border: 1px solid #6ee7b7;
       word-break: break-all;
     }
+    .r-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .r-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .r-size { opacity: 0.6; font-size: 0.8rem; margin-left: 0.45rem; font-weight: 400; }
+    .r-acts { display: flex; gap: 0.35rem; flex: 0 0 auto; }
+    .r-acts .ghost { padding: 0.25rem 0.6rem; }
     .result.err { background: #fef2f2; color: #7f1d1d; border-color: #fca5a5; }
     .result.pending { background: transparent; color: inherit; border-color: #888; opacity: 0.85; }
     @media (prefers-color-scheme: dark) {
@@ -103,9 +108,15 @@
                     border-top: 1px solid rgba(127,127,127,0.2);
                     font-size: 0.8rem; opacity: 0.6; text-align: center; }
     .summary { display: flex; justify-content: space-between; align-items: center;
-               font-size: 0.9rem; opacity: 0.85; margin-top: 0.5rem; }
-    /* `display:flex` above otherwise overrides the `hidden` attribute. */
-    .summary[hidden] { display: none; }
+               gap: 0.6rem; font-size: 0.9rem; margin: 0 0 0.75rem;
+               padding: 0.6rem 0.5rem 0.6rem 0.9rem; border-radius: 8px;
+               border: 1px solid rgba(127,127,127,0.3); background: rgba(127,127,127,0.06); }
+    .summary #summaryText { font-weight: 500; }
+    .summary .summary-actions { display: flex; gap: 0.4rem; flex: 0 0 auto; }
+    .summary.copied { background: #ecfdf5; border-color: #6ee7b7; }
+    @media (prefers-color-scheme: dark) {
+      .summary.copied { background: #042f2e; border-color: #047857; }
+    }
     progress { width: 100%; }
 
     .history { margin-top: 2.5rem; }
@@ -169,8 +180,15 @@
       background: transparent; color: inherit; cursor: pointer;
       text-align: center; text-decoration: none; line-height: 1.2;
     }
-    .hist-actions .del { flex: 0 0 auto; padding: 0.2rem 0.45rem; opacity: 0.7; }
-    .hist-actions .del:hover { opacity: 1; }
+    .hist-actions .del, .hist-actions .more { flex: 0 0 auto; padding: 0.2rem 0.45rem; opacity: 0.7; }
+    .hist-actions .del:hover, .hist-actions .more:hover { opacity: 1; }
+    .hist-more { display: flex; gap: 0.3rem; margin-top: 0.3rem; align-items: stretch; }
+    .hist-more button, .hist-more a {
+      flex: 1; padding: 0.2rem 0.3rem; font-size: 0.72rem;
+      border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
+      background: transparent; color: inherit; cursor: pointer;
+      text-align: center; text-decoration: none; line-height: 1.2;
+    }
 
     #lightbox {
       position: fixed; inset: 0; z-index: 1000;
@@ -316,14 +334,14 @@
     </div>
   </div>
 
-  <div id="out" class="results"></div>
   <div id="summary" class="summary" hidden>
     <span id="summaryText"></span>
-    <span style="display:flex; gap:0.4rem">
-      <button class="ghost" type="button" id="copyAll">Copy all links</button>
+    <span class="summary-actions">
+      <button class="primary" type="button" id="copyAll">Copy all links</button>
       <button class="ghost" type="button" id="dismissResults" title="Dismiss this batch">×</button>
     </span>
   </div>
+  <div id="out" class="results"></div>
 
   <section class="history" id="history" hidden>
     <div class="history-head">
@@ -512,26 +530,16 @@
             addToStore({ path: j.path, filename: j.filename, size: j.size, uploadedAt: Date.now(), batchId });
             slot.classList.remove('pending');
             slot.innerHTML = `
-              <div><strong>${escapeHtml(j.filename)}</strong> uploaded.</div>
-              <div class="row" style="margin-top:.5rem">
-                <input type="text" readonly />
-                <button type="button" class="ghost copy">Copy link</button>
+              <div class="r-row">
+                <span class="r-name" title="${escapeHtml(j.filename)}"><strong>${escapeHtml(j.filename)}</strong><span class="r-size">${(j.size/1024/1024).toFixed(2)} MB</span></span>
+                <span class="r-acts">
+                  <button type="button" class="ghost copy">Copy</button>
+                  <a class="ghost open" target="_blank" rel="noopener">Open</a>
+                </span>
               </div>
-              <div class="row" style="margin-top:.4rem; flex-wrap:wrap">
-                <button type="button" class="ghost copy-md">Copy MD</button>
-                <a class="ghost open" target="_blank" rel="noopener">Open</a>
-                <a class="ghost dl" href="${escapeHtml(url)}?dl=1" download>Download</a>
-                <button type="button" class="ghost qr-toggle">QR</button>
-              </div>
-              <div class="qr-wrap" hidden></div>
-              <div class="meta">${(j.size/1024/1024).toFixed(2)} MB</div>
             `;
-            const linkEl = slot.querySelector('input[type=text]');
-            linkEl.value = url;
             const openLink = slot.querySelector('.open');
             openLink.href = url;
-            wireCopyMd(slot.querySelector('.copy-md'), url, j.filename);
-            wireQrToggle(slot.querySelector('.qr-toggle'), slot.querySelector('.qr-wrap'), url, 'qr-wrap');
             const ext = fileExt(j.filename);
             const canPreview = IMAGE_EXTS.has(ext) || TEXT_EXTS.has(ext);
             if (canPreview) {
@@ -544,9 +552,8 @@
             const copyBtn = slot.querySelector('.copy');
             copyBtn.onclick = async () => {
               const ok = await copyText(url);
-              copyBtn.textContent = ok ? 'Copied' : 'Press Cmd/Ctrl+C';
-              if (!ok) { linkEl.focus(); linkEl.select(); }
-              setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 2000);
+              copyBtn.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+              setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
             };
             resolve({ ok: true });
           } else {
@@ -659,8 +666,8 @@
             : `✓ Link copied to clipboard${failNote}`;
         } else {
           summaryText.textContent = n > 1
-            ? `${ok} uploaded — tap Copy below to grab the links${failNote}`
-            : `${ok} uploaded — tap Copy below to grab the link${failNote}`;
+            ? `${ok} uploaded — tap “Copy all links” →${failNote}`
+            : `${ok} uploaded — tap “Copy link” →${failNote}`;
         }
         copyAllBtn.onclick = async () => {
           const okCopy = await copyText(uploadedUrls.join('\n'));
@@ -930,14 +937,15 @@
         <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
         <div class="hist-meta">${fmtAge(age)} · ${fmtRemaining(remain)}</div>
         <div class="hist-actions">
-          <button type="button" class="copy">Copy link</button>
+          <button type="button" class="copy">Copy</button>
           <a class="open" target="_blank" rel="noopener">Open</a>
+          <button type="button" class="more" title="More: download, QR, markdown">⋯</button>
           <button type="button" class="del" title="Remove from list">×</button>
         </div>
-        <div class="hist-actions">
-          <button type="button" class="copy-md">Copy MD</button>
+        <div class="hist-more" hidden>
           <a class="dl" href="${escapeHtml(url)}?dl=1" download>Download</a>
           <button type="button" class="qr-toggle">QR</button>
+          <button type="button" class="copy-md">Copy MD</button>
         </div>
         <div class="hist-qr" hidden></div>
       `;
@@ -945,8 +953,11 @@
       const openLink = card.querySelector('.open');
       const copyBtn = card.querySelector('.copy');
       const delBtn = card.querySelector('.del');
+      const moreBtn = card.querySelector('.more');
+      const moreRow = card.querySelector('.hist-more');
 
       openLink.href = url;
+      moreBtn.onclick = () => { moreRow.hidden = !moreRow.hidden; };
       wireCopyMd(card.querySelector('.copy-md'), url, it.filename);
       wireQrToggle(card.querySelector('.qr-toggle'), card.querySelector('.hist-qr'), url, 'hist-qr');
       if (isImage) {
