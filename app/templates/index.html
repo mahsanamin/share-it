@@ -8,6 +8,8 @@
   <style>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
+    /* The `hidden` attribute must always win, even over `display:flex` etc. */
+    [hidden] { display: none !important; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       max-width: 640px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5;
@@ -51,10 +53,15 @@
 
     .results { margin-top: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
     .result {
-      padding: 0.75rem 1rem; border-radius: 6px;
+      padding: 0.55rem 0.9rem; border-radius: 6px;
       background: #ecfdf5; color: #064e3b; border: 1px solid #6ee7b7;
       word-break: break-all;
     }
+    .r-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .r-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .r-size { opacity: 0.6; font-size: 0.8rem; margin-left: 0.45rem; font-weight: 400; }
+    .r-acts { display: flex; gap: 0.35rem; flex: 0 0 auto; }
+    .r-acts .ghost { padding: 0.25rem 0.6rem; }
     .result.err { background: #fef2f2; color: #7f1d1d; border-color: #fca5a5; }
     .result.pending { background: transparent; color: inherit; border-color: #888; opacity: 0.85; }
     @media (prefers-color-scheme: dark) {
@@ -66,8 +73,50 @@
                        border: 1px solid #888; border-radius: 4px; background: transparent;
                        color: inherit; }
     .meta { font-size: 0.85rem; opacity: 0.75; margin-top: 0.25rem; }
-    .summary { display: flex; justify-content: space-between; align-items: center;
-               font-size: 0.9rem; opacity: 0.85; margin-top: 0.5rem; }
+
+    .tabs { display: flex; gap: 0.25rem; margin-bottom: 0.9rem;
+            border-bottom: 1px solid rgba(127,127,127,0.25); }
+    .tab { padding: 0.5rem 1rem; font-size: 0.95rem; cursor: pointer;
+           border: 0; border-bottom: 2px solid transparent; background: transparent;
+           color: inherit; opacity: 0.55; margin-bottom: -1px; }
+    .tab:hover { opacity: 0.85; }
+    .tab.active { opacity: 1; font-weight: 600; border-bottom-color: #2563eb; }
+
+    .text-panel { display: flex; flex-direction: column; gap: 0.6rem; }
+    .text-panel textarea {
+      width: 100%; padding: 0.7rem 0.8rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem; line-height: 1.5; border: 1px solid #888;
+      border-radius: 8px; background: transparent; color: inherit; resize: vertical;
+    }
+    .text-panel .snippet-row { display: flex; gap: 0.5rem; align-items: center; }
+    .text-panel input[type=text] { flex: 1; }
+
+    .summary.copied #summaryText { color: #047857; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .summary.copied #summaryText { color: #6ee7b7; }
+    }
+
+    .qr-wrap { margin-top: 0.5rem; }
+    .qr-wrap img { width: 132px; height: 132px; border-radius: 6px;
+                   background: #fff; padding: 4px; }
+    .hist-qr { margin-top: 0.35rem; }
+    .hist-qr img { width: 100%; max-width: 120px; border-radius: 4px;
+                   background: #fff; padding: 3px; }
+
+    .stats-footer { margin-top: 2.5rem; padding-top: 0.9rem;
+                    border-top: 1px solid rgba(127,127,127,0.2);
+                    font-size: 0.8rem; opacity: 0.6; text-align: center; }
+    .summary { display: flex; flex-wrap: wrap; justify-content: space-between;
+               align-items: center; gap: 0.5rem; font-size: 0.9rem; margin: 0 0 0.75rem;
+               padding: 0.6rem 0.5rem 0.6rem 0.9rem; border-radius: 8px;
+               border: 1px solid rgba(127,127,127,0.3); background: rgba(127,127,127,0.06); }
+    .summary #summaryText { font-weight: 500; flex: 1 1 auto; min-width: 0; }
+    .summary .summary-actions { display: flex; gap: 0.4rem; flex: 0 0 auto; margin-left: auto; }
+    .summary.copied { background: #ecfdf5; border-color: #6ee7b7; }
+    @media (prefers-color-scheme: dark) {
+      .summary.copied { background: #042f2e; border-color: #047857; }
+    }
     progress { width: 100%; }
 
     .history { margin-top: 2.5rem; }
@@ -131,8 +180,15 @@
       background: transparent; color: inherit; cursor: pointer;
       text-align: center; text-decoration: none; line-height: 1.2;
     }
-    .hist-actions .del { flex: 0 0 auto; padding: 0.2rem 0.45rem; opacity: 0.7; }
-    .hist-actions .del:hover { opacity: 1; }
+    .hist-actions .del, .hist-actions .more { flex: 0 0 auto; padding: 0.2rem 0.45rem; opacity: 0.7; }
+    .hist-actions .del:hover, .hist-actions .more:hover { opacity: 1; }
+    .hist-more { display: flex; gap: 0.3rem; margin-top: 0.3rem; align-items: stretch; }
+    .hist-more button, .hist-more a {
+      flex: 1; padding: 0.2rem 0.3rem; font-size: 0.72rem;
+      border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
+      background: transparent; color: inherit; cursor: pointer;
+      text-align: center; text-decoration: none; line-height: 1.2;
+    }
 
     #lightbox {
       position: fixed; inset: 0; z-index: 1000;
@@ -242,6 +298,11 @@
     {% if blocked_exts %}Executables and installers are blocked.{% endif %}
   </div>
 
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab active" id="tabFiles" role="tab" aria-selected="true">Files</button>
+    <button type="button" class="tab" id="tabText" role="tab" aria-selected="false">Text</button>
+  </div>
+
   <form id="f">
     <input
       type="file"
@@ -253,24 +314,34 @@
     <label class="drop" id="drop" for="file">
       <span class="big" id="dropTitle">Drop files here or click to choose</span>
       <span class="sub">Any file type except executables &middot; up to {{ max_upload_mb }} MB each</span>
+      <span class="sub">Tip: paste a screenshot with Cmd/Ctrl+V to upload it instantly</span>
       <span class="picked" id="picked" hidden></span>
     </label>
 
     <div class="actions">
       <button class="ghost" type="button" id="clear" hidden>Clear</button>
-      <button class="primary" type="submit" id="btn" disabled>Upload</button>
+      <button class="primary" type="submit" id="btn" disabled>Upload &amp; copy link</button>
     </div>
     <progress id="prog" value="0" max="100" hidden></progress>
   </form>
 
-  <div id="out" class="results"></div>
+  <div class="text-panel" id="textPanel" hidden>
+    <textarea id="snippetText" rows="7"
+      placeholder="Paste or type text here — a log, a note, some markdown…"></textarea>
+    <div class="snippet-row">
+      <input type="text" id="snippetName" placeholder="Optional file name (e.g. notes.md)" />
+      <button class="primary" type="button" id="snippetShare" disabled>Share &amp; copy link</button>
+    </div>
+  </div>
+
   <div id="summary" class="summary" hidden>
     <span id="summaryText"></span>
-    <span style="display:flex; gap:0.4rem">
-      <button class="ghost" type="button" id="copyAll">Copy all links</button>
+    <span class="summary-actions">
+      <button class="primary" type="button" id="copyAll">Copy all links</button>
       <button class="ghost" type="button" id="dismissResults" title="Dismiss this batch">×</button>
     </span>
   </div>
+  <div id="out" class="results"></div>
 
   <section class="history" id="history" hidden>
     <div class="history-head">
@@ -282,6 +353,10 @@
     </div>
     <div class="history-grid" id="historyGrid"></div>
   </section>
+
+  <footer class="stats-footer" id="statsFooter">
+    <span id="statsLine"></span><span id="statsSep" hidden> · </span>share-it v{{ version }}
+  </footer>
 
   <div id="lightbox" role="dialog" aria-modal="true" aria-label="File preview" hidden>
     <button id="lightboxClose" type="button" aria-label="Close preview">×</button>
@@ -339,6 +414,78 @@
       }
     });
 
+    function stageAndUpload(files) {
+      const dt = new DataTransfer();
+      files.forEach(f => dt.items.add(f));
+      fileInput.files = dt.files;
+      showPicked();
+      form.requestSubmit();
+    }
+
+    // Paste-to-upload: a clipboard image (e.g. a screenshot) uploads instantly.
+    // Skip when focus is in a text field so normal text-paste still works.
+    window.addEventListener('paste', (e) => {
+      const t = e.target;
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) return;
+      const items = Array.from((e.clipboardData && e.clipboardData.items) || []);
+      const files = items
+        .filter(it => it.kind === 'file')
+        .map(it => it.getAsFile())
+        .filter(Boolean);
+      if (!files.length) return;
+      e.preventDefault();
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const named = files.map((f, i) => {
+        const generic = !f.name || f.name === 'image.png';
+        if (!generic) return f;
+        const ext = ((f.type.split('/')[1]) || 'png').replace('jpeg', 'jpg');
+        return new File([f], `pasted-${stamp}${i ? '-' + i : ''}.${ext}`, { type: f.type });
+      });
+      stageAndUpload(named);
+    });
+
+    // ----- Files / Text tab toggle -----
+    const tabFiles = document.getElementById('tabFiles');
+    const tabText = document.getElementById('tabText');
+    const filesForm = document.getElementById('f');
+    const textPanel = document.getElementById('textPanel');
+    const snippetText = document.getElementById('snippetText');
+    const snippetName = document.getElementById('snippetName');
+    const snippetShare = document.getElementById('snippetShare');
+
+    function selectTab(which) {
+      const text = which === 'text';
+      tabText.classList.toggle('active', text);
+      tabFiles.classList.toggle('active', !text);
+      tabText.setAttribute('aria-selected', String(text));
+      tabFiles.setAttribute('aria-selected', String(!text));
+      textPanel.hidden = !text;
+      filesForm.hidden = text;
+      if (text) snippetText.focus();
+    }
+    tabFiles.addEventListener('click', () => selectTab('files'));
+    tabText.addEventListener('click', () => selectTab('text'));
+
+    // Share a text snippet without saving a file first.
+    snippetText.addEventListener('input', () => {
+      snippetShare.disabled = !snippetText.value.trim();
+    });
+    snippetShare.addEventListener('click', () => {
+      const text = snippetText.value;
+      if (!text.trim()) return;
+      let name = (snippetName.value || '').trim();
+      if (!name) {
+        const looksMd = /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+\.\s|```|>\s)/.test(text);
+        name = looksMd ? 'snippet.md' : 'snippet.txt';
+      } else if (!/\.[^.]+$/.test(name)) {
+        name += '.txt';
+      }
+      const file = new File([new Blob([text], { type: 'text/plain' })], name, { type: 'text/plain' });
+      stageAndUpload([file]);
+      snippetText.value = '';
+      snippetShare.disabled = true;
+    });
+
     async function copyText(text) {
       try {
         if (navigator.clipboard && window.isSecureContext) {
@@ -383,16 +530,14 @@
             addToStore({ path: j.path, filename: j.filename, size: j.size, uploadedAt: Date.now(), batchId });
             slot.classList.remove('pending');
             slot.innerHTML = `
-              <div><strong>${escapeHtml(j.filename)}</strong> uploaded.</div>
-              <div class="row" style="margin-top:.5rem">
-                <input type="text" readonly />
-                <button type="button" class="ghost copy">Copy link</button>
-                <a class="ghost open" target="_blank" rel="noopener">Open</a>
+              <div class="r-row">
+                <span class="r-name" title="${escapeHtml(j.filename)}"><strong>${escapeHtml(j.filename)}</strong><span class="r-size">${(j.size/1024/1024).toFixed(2)} MB</span></span>
+                <span class="r-acts">
+                  <button type="button" class="ghost copy">Copy</button>
+                  <a class="ghost open" target="_blank" rel="noopener">Open</a>
+                </span>
               </div>
-              <div class="meta">${(j.size/1024/1024).toFixed(2)} MB</div>
             `;
-            const linkEl = slot.querySelector('input[type=text]');
-            linkEl.value = url;
             const openLink = slot.querySelector('.open');
             openLink.href = url;
             const ext = fileExt(j.filename);
@@ -407,9 +552,8 @@
             const copyBtn = slot.querySelector('.copy');
             copyBtn.onclick = async () => {
               const ok = await copyText(url);
-              copyBtn.textContent = ok ? 'Copied' : 'Press Cmd/Ctrl+C';
-              if (!ok) { linkEl.focus(); linkEl.select(); }
-              setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 2000);
+              copyBtn.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+              setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
             };
             resolve({ ok: true });
           } else {
@@ -435,6 +579,38 @@
       return String(s).replace(/[&<>"']/g, c => ({
         '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
       }[c]));
+    }
+
+    function markdownLink(url, filename) {
+      const isImg = IMAGE_EXTS.has(fileExt(filename));
+      const label = (filename || url).replace(/[\[\]]/g, '');
+      return `${isImg ? '!' : ''}[${label}](${url})`;
+    }
+    function qrUrl(target) { return '/qr?data=' + encodeURIComponent(target); }
+
+    function wireCopyMd(btn, url, filename) {
+      if (!btn) return;
+      btn.onclick = async () => {
+        const ok = await copyText(markdownLink(url, filename));
+        const orig = btn.textContent;
+        btn.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      };
+    }
+    // Lazily insert the QR <img> the first time the toggle is clicked.
+    function wireQrToggle(btn, wrap, url, cls) {
+      if (!btn || !wrap) return;
+      btn.onclick = () => {
+        if (wrap.hidden && !wrap.firstChild) {
+          const img = document.createElement('img');
+          img.src = qrUrl(url);
+          img.alt = 'QR code for ' + url;
+          img.loading = 'lazy';
+          wrap.appendChild(img);
+        }
+        wrap.hidden = !wrap.hidden;
+        btn.textContent = wrap.hidden ? 'QR' : 'Hide QR';
+      };
     }
 
     function newBatchId() {
@@ -473,12 +649,28 @@
       }
 
       btn.disabled = false;
+      refreshStats();
       if (uploadedUrls.length) {
         summary.hidden = false;
-        summaryText.textContent = `${ok} uploaded${fail ? `, ${fail} failed` : ''}.`;
+        const n = uploadedUrls.length;
+        // Auto-copy the link(s) and say so clearly. This runs inside the
+        // upload's user-gesture window, so it succeeds for the common
+        // (small/fast) case; if the clipboard is blocked we say so honestly.
+        copyAllBtn.textContent = n > 1 ? 'Copy all links' : 'Copy link';
+        const autoCopied = await copyText(uploadedUrls.join('\n'));
+        summary.classList.toggle('copied', autoCopied);
+        const failNote = fail ? ` · ${fail} failed` : '';
+        if (autoCopied) {
+          summaryText.textContent = n > 1
+            ? `✓ ${n} links copied to clipboard${failNote}`
+            : `✓ Link copied to clipboard${failNote}`;
+        } else {
+          summaryText.textContent = n > 1
+            ? `${ok} uploaded — tap “Copy all links” →${failNote}`
+            : `${ok} uploaded — tap “Copy link” →${failNote}`;
+        }
         copyAllBtn.onclick = async () => {
-          const text = uploadedUrls.join('\n');
-          const okCopy = await copyText(text);
+          const okCopy = await copyText(uploadedUrls.join('\n'));
           copyAllBtn.textContent = okCopy ? 'Copied' : 'Press Cmd/Ctrl+C';
           setTimeout(() => { copyAllBtn.textContent = 'Copy all links'; }, 2000);
         };
@@ -745,17 +937,29 @@
         <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
         <div class="hist-meta">${fmtAge(age)} · ${fmtRemaining(remain)}</div>
         <div class="hist-actions">
-          <button type="button" class="copy">Copy link</button>
+          <button type="button" class="copy">Copy</button>
           <a class="open" target="_blank" rel="noopener">Open</a>
+          <button type="button" class="more" title="More: download, QR, markdown">⋯</button>
           <button type="button" class="del" title="Remove from list">×</button>
         </div>
+        <div class="hist-more" hidden>
+          <a class="dl" href="${escapeHtml(url)}?dl=1" download>Download</a>
+          <button type="button" class="qr-toggle">QR</button>
+          <button type="button" class="copy-md">Copy MD</button>
+        </div>
+        <div class="hist-qr" hidden></div>
       `;
       const thumb = card.querySelector('.hist-thumb');
       const openLink = card.querySelector('.open');
       const copyBtn = card.querySelector('.copy');
       const delBtn = card.querySelector('.del');
+      const moreBtn = card.querySelector('.more');
+      const moreRow = card.querySelector('.hist-more');
 
       openLink.href = url;
+      moreBtn.onclick = () => { moreRow.hidden = !moreRow.hidden; };
+      wireCopyMd(card.querySelector('.copy-md'), url, it.filename);
+      wireQrToggle(card.querySelector('.qr-toggle'), card.querySelector('.hist-qr'), url, 'hist-qr');
       if (isImage) {
         thumb.src = url;
         thumb.alt = it.filename;
@@ -882,7 +1086,28 @@
       if (needsRerender) renderHistory();
     }, 60 * 1000);
 
+    // ----- Server-side storage footer (version is always shown) -----
+    const statsLine = document.getElementById('statsLine');
+    const statsSep = document.getElementById('statsSep');
+    async function refreshStats() {
+      try {
+        const r = await fetch('/stats');
+        if (!r.ok) return;
+        const s = await r.json();
+        if (!s.files) { statsLine.textContent = ''; statsSep.hidden = true; return; }
+        const mb = (s.bytes / 1024 / 1024).toFixed(1);
+        let txt = `${s.files} file${s.files > 1 ? 's' : ''} · ${mb} MB stored on server`;
+        if (s.oldest_expires) {
+          const left = s.oldest_expires * 1000 - Date.now();
+          if (left > 0) txt += ` · oldest expires in ${fmtRemaining(left).replace(' left', '')}`;
+        }
+        statsLine.textContent = txt;
+        statsSep.hidden = false;
+      } catch (_) {}
+    }
+
     renderHistory();
+    refreshStats();
   </script>
 </body>
 </html>

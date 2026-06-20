@@ -1,9 +1,11 @@
 COMPOSE := docker compose
 SERVICE := share-it
+VERSION_FILE := VERSION
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down restart rebuild logs ps shell config clean
+.PHONY: help up down restart rebuild logs ps shell config clean \
+        version bump-patch bump-minor bump-major
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make <target>\n\nTargets:\n"} \
@@ -39,3 +41,21 @@ clean: ## Delete ALL uploaded files in ./data (asks for confirmation)
 	 read ans; [ "$$ans" = "y" ] || [ "$$ans" = "Y" ] || { echo "aborted"; exit 1; }; \
 	 find ./data -mindepth 1 ! -name '.gitkeep' -exec rm -rf {} +; \
 	 echo "data cleared."
+
+version: ## Print the current version
+	@cat $(VERSION_FILE)
+
+bump-patch: ## Bump patch version (x.y.Z) and rebuild
+	@v=`cat $(VERSION_FILE)`; a=$${v%%.*}; r=$${v#*.}; b=$${r%%.*}; c=$${r#*.}; \
+	 n="$$a.$$b.$$((c+1))"; printf '%s\n' "$$n" > $(VERSION_FILE); \
+	 echo "version: $$v -> $$n  (run 'make up' to deploy)"
+
+bump-minor: ## Bump minor version (x.Y.0) and rebuild
+	@v=`cat $(VERSION_FILE)`; a=$${v%%.*}; r=$${v#*.}; b=$${r%%.*}; \
+	 n="$$a.$$((b+1)).0"; printf '%s\n' "$$n" > $(VERSION_FILE); \
+	 echo "version: $$v -> $$n  (run 'make up' to deploy)"
+
+bump-major: ## Bump major version (X.0.0) and rebuild
+	@v=`cat $(VERSION_FILE)`; a=$${v%%.*}; \
+	 n="$$((a+1)).0.0"; printf '%s\n' "$$n" > $(VERSION_FILE); \
+	 echo "version: $$v -> $$n  (run 'make up' to deploy)"
