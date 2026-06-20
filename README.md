@@ -13,6 +13,8 @@ Run `share-it` on any box on your network — your dev machine, a NAS, a VPS, a 
 ## Features
 
 - Drag-and-drop, multi-file uploads, per-file links + Copy-all
+- **Auto-copies the link to your clipboard on upload** (with clear confirmation)
+- **Files / Text tabs** — drop files, or paste a text snippet, with one clear action each
 - **Paste-to-upload** — paste a screenshot (or any clipboard file) with Cmd/Ctrl+V
 - **Share a text snippet** — paste text/markdown, get a link, no local file needed
 - **QR code** for every link — point a phone camera at it to grab the file

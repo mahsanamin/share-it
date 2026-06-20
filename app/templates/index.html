@@ -8,6 +8,8 @@
   <style>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
+    /* The `hidden` attribute must always win, even over `display:flex` etc. */
+    [hidden] { display: none !important; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       max-width: 640px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5;
@@ -67,20 +69,28 @@
                        color: inherit; }
     .meta { font-size: 0.85rem; opacity: 0.75; margin-top: 0.25rem; }
 
-    .snippet { margin-top: 0.85rem; border: 1px dashed rgba(127,127,127,0.4);
-               border-radius: 8px; padding: 0 0.85rem; }
-    .snippet[open] { padding-bottom: 0.85rem; }
-    .snippet summary { cursor: pointer; padding: 0.6rem 0; font-size: 0.9rem;
-                       opacity: 0.85; user-select: none; }
-    .snippet textarea {
-      width: 100%; margin-top: 0.5rem; padding: 0.6rem 0.7rem;
+    .tabs { display: flex; gap: 0.25rem; margin-bottom: 0.9rem;
+            border-bottom: 1px solid rgba(127,127,127,0.25); }
+    .tab { padding: 0.5rem 1rem; font-size: 0.95rem; cursor: pointer;
+           border: 0; border-bottom: 2px solid transparent; background: transparent;
+           color: inherit; opacity: 0.55; margin-bottom: -1px; }
+    .tab:hover { opacity: 0.85; }
+    .tab.active { opacity: 1; font-weight: 600; border-bottom-color: #2563eb; }
+
+    .text-panel { display: flex; flex-direction: column; gap: 0.6rem; }
+    .text-panel textarea {
+      width: 100%; padding: 0.7rem 0.8rem;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 0.85rem; line-height: 1.5; border: 1px solid #888;
-      border-radius: 6px; background: transparent; color: inherit; resize: vertical;
+      border-radius: 8px; background: transparent; color: inherit; resize: vertical;
     }
-    .snippet .snippet-row { display: flex; gap: 0.5rem; align-items: center;
-                            margin-top: 0.5rem; }
-    .snippet input[type=text] { flex: 1; }
+    .text-panel .snippet-row { display: flex; gap: 0.5rem; align-items: center; }
+    .text-panel input[type=text] { flex: 1; }
+
+    .summary.copied #summaryText { color: #047857; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .summary.copied #summaryText { color: #6ee7b7; }
+    }
 
     .qr-wrap { margin-top: 0.5rem; }
     .qr-wrap img { width: 132px; height: 132px; border-radius: 6px;
@@ -270,6 +280,11 @@
     {% if blocked_exts %}Executables and installers are blocked.{% endif %}
   </div>
 
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab active" id="tabFiles" role="tab" aria-selected="true">Files</button>
+    <button type="button" class="tab" id="tabText" role="tab" aria-selected="false">Text</button>
+  </div>
+
   <form id="f">
     <input
       type="file"
@@ -281,26 +296,25 @@
     <label class="drop" id="drop" for="file">
       <span class="big" id="dropTitle">Drop files here or click to choose</span>
       <span class="sub">Any file type except executables &middot; up to {{ max_upload_mb }} MB each</span>
-      <span class="sub">…or paste a screenshot or text with Cmd/Ctrl+V</span>
+      <span class="sub">Tip: paste a screenshot with Cmd/Ctrl+V to upload it instantly</span>
       <span class="picked" id="picked" hidden></span>
     </label>
 
     <div class="actions">
       <button class="ghost" type="button" id="clear" hidden>Clear</button>
-      <button class="primary" type="submit" id="btn" disabled>Upload</button>
+      <button class="primary" type="submit" id="btn" disabled>Upload &amp; copy link</button>
     </div>
     <progress id="prog" value="0" max="100" hidden></progress>
   </form>
 
-  <details class="snippet" id="snippetBox">
-    <summary>Or share a text snippet (log, note, markdown)…</summary>
-    <textarea id="snippetText" rows="6"
-      placeholder="Paste or type text here. Markdown (.md) renders in the preview."></textarea>
+  <div class="text-panel" id="textPanel" hidden>
+    <textarea id="snippetText" rows="7"
+      placeholder="Paste or type text here — a log, a note, some markdown…"></textarea>
     <div class="snippet-row">
-      <input type="text" id="snippetName" placeholder="snippet.md" />
-      <button class="primary" type="button" id="snippetShare" disabled>Share text</button>
+      <input type="text" id="snippetName" placeholder="Optional file name (e.g. notes.md)" />
+      <button class="primary" type="button" id="snippetShare" disabled>Share &amp; copy link</button>
     </div>
-  </details>
+  </div>
 
   <div id="out" class="results"></div>
   <div id="summary" class="summary" hidden>
@@ -412,11 +426,29 @@
       stageAndUpload(named);
     });
 
-    // Share a text snippet without saving a file first.
-    const snippetBox = document.getElementById('snippetBox');
+    // ----- Files / Text tab toggle -----
+    const tabFiles = document.getElementById('tabFiles');
+    const tabText = document.getElementById('tabText');
+    const filesForm = document.getElementById('f');
+    const textPanel = document.getElementById('textPanel');
     const snippetText = document.getElementById('snippetText');
     const snippetName = document.getElementById('snippetName');
     const snippetShare = document.getElementById('snippetShare');
+
+    function selectTab(which) {
+      const text = which === 'text';
+      tabText.classList.toggle('active', text);
+      tabFiles.classList.toggle('active', !text);
+      tabText.setAttribute('aria-selected', String(text));
+      tabFiles.setAttribute('aria-selected', String(!text));
+      textPanel.hidden = !text;
+      filesForm.hidden = text;
+      if (text) snippetText.focus();
+    }
+    tabFiles.addEventListener('click', () => selectTab('files'));
+    tabText.addEventListener('click', () => selectTab('text'));
+
+    // Share a text snippet without saving a file first.
     snippetText.addEventListener('input', () => {
       snippetShare.disabled = !snippetText.value.trim();
     });
@@ -434,7 +466,6 @@
       stageAndUpload([file]);
       snippetText.value = '';
       snippetShare.disabled = true;
-      snippetBox.open = false;
     });
 
     async function copyText(text) {
@@ -614,10 +645,25 @@
       refreshStats();
       if (uploadedUrls.length) {
         summary.hidden = false;
-        summaryText.textContent = `${ok} uploaded${fail ? `, ${fail} failed` : ''}.`;
+        const n = uploadedUrls.length;
+        // Auto-copy the link(s) and say so clearly. This runs inside the
+        // upload's user-gesture window, so it succeeds for the common
+        // (small/fast) case; if the clipboard is blocked we say so honestly.
+        copyAllBtn.textContent = n > 1 ? 'Copy all links' : 'Copy link';
+        const autoCopied = await copyText(uploadedUrls.join('\n'));
+        summary.classList.toggle('copied', autoCopied);
+        const failNote = fail ? ` · ${fail} failed` : '';
+        if (autoCopied) {
+          summaryText.textContent = n > 1
+            ? `✓ ${n} links copied to clipboard${failNote}`
+            : `✓ Link copied to clipboard${failNote}`;
+        } else {
+          summaryText.textContent = n > 1
+            ? `${ok} uploaded — tap Copy below to grab the links${failNote}`
+            : `${ok} uploaded — tap Copy below to grab the link${failNote}`;
+        }
         copyAllBtn.onclick = async () => {
-          const text = uploadedUrls.join('\n');
-          const okCopy = await copyText(text);
+          const okCopy = await copyText(uploadedUrls.join('\n'));
           copyAllBtn.textContent = okCopy ? 'Copied' : 'Press Cmd/Ctrl+C';
           setTimeout(() => { copyAllBtn.textContent = 'Copy all links'; }, 2000);
         };
