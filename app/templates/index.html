@@ -66,8 +66,36 @@
                        border: 1px solid #888; border-radius: 4px; background: transparent;
                        color: inherit; }
     .meta { font-size: 0.85rem; opacity: 0.75; margin-top: 0.25rem; }
+
+    .snippet { margin-top: 0.85rem; border: 1px dashed rgba(127,127,127,0.4);
+               border-radius: 8px; padding: 0 0.85rem; }
+    .snippet[open] { padding-bottom: 0.85rem; }
+    .snippet summary { cursor: pointer; padding: 0.6rem 0; font-size: 0.9rem;
+                       opacity: 0.85; user-select: none; }
+    .snippet textarea {
+      width: 100%; margin-top: 0.5rem; padding: 0.6rem 0.7rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem; line-height: 1.5; border: 1px solid #888;
+      border-radius: 6px; background: transparent; color: inherit; resize: vertical;
+    }
+    .snippet .snippet-row { display: flex; gap: 0.5rem; align-items: center;
+                            margin-top: 0.5rem; }
+    .snippet input[type=text] { flex: 1; }
+
+    .qr-wrap { margin-top: 0.5rem; }
+    .qr-wrap img { width: 132px; height: 132px; border-radius: 6px;
+                   background: #fff; padding: 4px; }
+    .hist-qr { margin-top: 0.35rem; }
+    .hist-qr img { width: 100%; max-width: 120px; border-radius: 4px;
+                   background: #fff; padding: 3px; }
+
+    .stats-footer { margin-top: 2.5rem; padding-top: 0.9rem;
+                    border-top: 1px solid rgba(127,127,127,0.2);
+                    font-size: 0.8rem; opacity: 0.6; text-align: center; }
     .summary { display: flex; justify-content: space-between; align-items: center;
                font-size: 0.9rem; opacity: 0.85; margin-top: 0.5rem; }
+    /* `display:flex` above otherwise overrides the `hidden` attribute. */
+    .summary[hidden] { display: none; }
     progress { width: 100%; }
 
     .history { margin-top: 2.5rem; }
@@ -253,6 +281,7 @@
     <label class="drop" id="drop" for="file">
       <span class="big" id="dropTitle">Drop files here or click to choose</span>
       <span class="sub">Any file type except executables &middot; up to {{ max_upload_mb }} MB each</span>
+      <span class="sub">…or paste a screenshot or text with Cmd/Ctrl+V</span>
       <span class="picked" id="picked" hidden></span>
     </label>
 
@@ -262,6 +291,16 @@
     </div>
     <progress id="prog" value="0" max="100" hidden></progress>
   </form>
+
+  <details class="snippet" id="snippetBox">
+    <summary>Or share a text snippet (log, note, markdown)…</summary>
+    <textarea id="snippetText" rows="6"
+      placeholder="Paste or type text here. Markdown (.md) renders in the preview."></textarea>
+    <div class="snippet-row">
+      <input type="text" id="snippetName" placeholder="snippet.md" />
+      <button class="primary" type="button" id="snippetShare" disabled>Share text</button>
+    </div>
+  </details>
 
   <div id="out" class="results"></div>
   <div id="summary" class="summary" hidden>
@@ -282,6 +321,10 @@
     </div>
     <div class="history-grid" id="historyGrid"></div>
   </section>
+
+  <footer class="stats-footer" id="statsFooter">
+    <span id="statsLine"></span><span id="statsSep" hidden> · </span>share-it v{{ version }}
+  </footer>
 
   <div id="lightbox" role="dialog" aria-modal="true" aria-label="File preview" hidden>
     <button id="lightboxClose" type="button" aria-label="Close preview">×</button>
@@ -339,6 +382,61 @@
       }
     });
 
+    function stageAndUpload(files) {
+      const dt = new DataTransfer();
+      files.forEach(f => dt.items.add(f));
+      fileInput.files = dt.files;
+      showPicked();
+      form.requestSubmit();
+    }
+
+    // Paste-to-upload: a clipboard image (e.g. a screenshot) uploads instantly.
+    // Skip when focus is in a text field so normal text-paste still works.
+    window.addEventListener('paste', (e) => {
+      const t = e.target;
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) return;
+      const items = Array.from((e.clipboardData && e.clipboardData.items) || []);
+      const files = items
+        .filter(it => it.kind === 'file')
+        .map(it => it.getAsFile())
+        .filter(Boolean);
+      if (!files.length) return;
+      e.preventDefault();
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const named = files.map((f, i) => {
+        const generic = !f.name || f.name === 'image.png';
+        if (!generic) return f;
+        const ext = ((f.type.split('/')[1]) || 'png').replace('jpeg', 'jpg');
+        return new File([f], `pasted-${stamp}${i ? '-' + i : ''}.${ext}`, { type: f.type });
+      });
+      stageAndUpload(named);
+    });
+
+    // Share a text snippet without saving a file first.
+    const snippetBox = document.getElementById('snippetBox');
+    const snippetText = document.getElementById('snippetText');
+    const snippetName = document.getElementById('snippetName');
+    const snippetShare = document.getElementById('snippetShare');
+    snippetText.addEventListener('input', () => {
+      snippetShare.disabled = !snippetText.value.trim();
+    });
+    snippetShare.addEventListener('click', () => {
+      const text = snippetText.value;
+      if (!text.trim()) return;
+      let name = (snippetName.value || '').trim();
+      if (!name) {
+        const looksMd = /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+\.\s|```|>\s)/.test(text);
+        name = looksMd ? 'snippet.md' : 'snippet.txt';
+      } else if (!/\.[^.]+$/.test(name)) {
+        name += '.txt';
+      }
+      const file = new File([new Blob([text], { type: 'text/plain' })], name, { type: 'text/plain' });
+      stageAndUpload([file]);
+      snippetText.value = '';
+      snippetShare.disabled = true;
+      snippetBox.open = false;
+    });
+
     async function copyText(text) {
       try {
         if (navigator.clipboard && window.isSecureContext) {
@@ -387,14 +485,22 @@
               <div class="row" style="margin-top:.5rem">
                 <input type="text" readonly />
                 <button type="button" class="ghost copy">Copy link</button>
-                <a class="ghost open" target="_blank" rel="noopener">Open</a>
               </div>
+              <div class="row" style="margin-top:.4rem; flex-wrap:wrap">
+                <button type="button" class="ghost copy-md">Copy MD</button>
+                <a class="ghost open" target="_blank" rel="noopener">Open</a>
+                <a class="ghost dl" href="${escapeHtml(url)}?dl=1" download>Download</a>
+                <button type="button" class="ghost qr-toggle">QR</button>
+              </div>
+              <div class="qr-wrap" hidden></div>
               <div class="meta">${(j.size/1024/1024).toFixed(2)} MB</div>
             `;
             const linkEl = slot.querySelector('input[type=text]');
             linkEl.value = url;
             const openLink = slot.querySelector('.open');
             openLink.href = url;
+            wireCopyMd(slot.querySelector('.copy-md'), url, j.filename);
+            wireQrToggle(slot.querySelector('.qr-toggle'), slot.querySelector('.qr-wrap'), url, 'qr-wrap');
             const ext = fileExt(j.filename);
             const canPreview = IMAGE_EXTS.has(ext) || TEXT_EXTS.has(ext);
             if (canPreview) {
@@ -437,6 +543,38 @@
       }[c]));
     }
 
+    function markdownLink(url, filename) {
+      const isImg = IMAGE_EXTS.has(fileExt(filename));
+      const label = (filename || url).replace(/[\[\]]/g, '');
+      return `${isImg ? '!' : ''}[${label}](${url})`;
+    }
+    function qrUrl(target) { return '/qr?data=' + encodeURIComponent(target); }
+
+    function wireCopyMd(btn, url, filename) {
+      if (!btn) return;
+      btn.onclick = async () => {
+        const ok = await copyText(markdownLink(url, filename));
+        const orig = btn.textContent;
+        btn.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      };
+    }
+    // Lazily insert the QR <img> the first time the toggle is clicked.
+    function wireQrToggle(btn, wrap, url, cls) {
+      if (!btn || !wrap) return;
+      btn.onclick = () => {
+        if (wrap.hidden && !wrap.firstChild) {
+          const img = document.createElement('img');
+          img.src = qrUrl(url);
+          img.alt = 'QR code for ' + url;
+          img.loading = 'lazy';
+          wrap.appendChild(img);
+        }
+        wrap.hidden = !wrap.hidden;
+        btn.textContent = wrap.hidden ? 'QR' : 'Hide QR';
+      };
+    }
+
     function newBatchId() {
       if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
       return `b_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -473,6 +611,7 @@
       }
 
       btn.disabled = false;
+      refreshStats();
       if (uploadedUrls.length) {
         summary.hidden = false;
         summaryText.textContent = `${ok} uploaded${fail ? `, ${fail} failed` : ''}.`;
@@ -749,6 +888,12 @@
           <a class="open" target="_blank" rel="noopener">Open</a>
           <button type="button" class="del" title="Remove from list">×</button>
         </div>
+        <div class="hist-actions">
+          <button type="button" class="copy-md">Copy MD</button>
+          <a class="dl" href="${escapeHtml(url)}?dl=1" download>Download</a>
+          <button type="button" class="qr-toggle">QR</button>
+        </div>
+        <div class="hist-qr" hidden></div>
       `;
       const thumb = card.querySelector('.hist-thumb');
       const openLink = card.querySelector('.open');
@@ -756,6 +901,8 @@
       const delBtn = card.querySelector('.del');
 
       openLink.href = url;
+      wireCopyMd(card.querySelector('.copy-md'), url, it.filename);
+      wireQrToggle(card.querySelector('.qr-toggle'), card.querySelector('.hist-qr'), url, 'hist-qr');
       if (isImage) {
         thumb.src = url;
         thumb.alt = it.filename;
@@ -882,7 +1029,28 @@
       if (needsRerender) renderHistory();
     }, 60 * 1000);
 
+    // ----- Server-side storage footer (version is always shown) -----
+    const statsLine = document.getElementById('statsLine');
+    const statsSep = document.getElementById('statsSep');
+    async function refreshStats() {
+      try {
+        const r = await fetch('/stats');
+        if (!r.ok) return;
+        const s = await r.json();
+        if (!s.files) { statsLine.textContent = ''; statsSep.hidden = true; return; }
+        const mb = (s.bytes / 1024 / 1024).toFixed(1);
+        let txt = `${s.files} file${s.files > 1 ? 's' : ''} · ${mb} MB stored on server`;
+        if (s.oldest_expires) {
+          const left = s.oldest_expires * 1000 - Date.now();
+          if (left > 0) txt += ` · oldest expires in ${fmtRemaining(left).replace(' left', '')}`;
+        }
+        statsLine.textContent = txt;
+        statsSep.hidden = false;
+      } catch (_) {}
+    }
+
     renderHistory();
+    refreshStats();
   </script>
 </body>
 </html>

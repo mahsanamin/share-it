@@ -8,9 +8,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
 
+import qrcode
 import yaml
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+)
 from fastapi.templating import Jinja2Templates
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "/app/config.yaml")
@@ -30,6 +37,13 @@ IMAGE_EXTS = {e.lower().lstrip(".") for e in (cfg.get("image_extensions") or [])
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 FAVICON_PATH = Path(__file__).parent / "favicon.svg"
+
+# Single source of truth: the repo-root VERSION file (copied next to the app in
+# the image). Bump it with `make bump-patch|bump-minor|bump-major`.
+try:
+    APP_VERSION = (Path(__file__).parent / "VERSION").read_text().strip() or "dev"
+except OSError:
+    APP_VERSION = "dev"
 
 
 async def cleanup_loop():
@@ -74,6 +88,67 @@ app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 
+@app.get("/healthz")
+def healthz():
+    return {"ok": True, "version": APP_VERSION}
+
+
+@app.get("/version")
+def version():
+    return {"version": APP_VERSION}
+
+
+@app.get("/stats")
+def stats():
+    files = 0
+    total = 0
+    oldest = None
+    for entry in DATA_DIR.iterdir():
+        if not entry.is_dir():
+            continue
+        for f in entry.iterdir():
+            if f.is_file():
+                files += 1
+                total += f.stat().st_size
+        m = entry.stat().st_mtime
+        oldest = m if oldest is None else min(oldest, m)
+    oldest_expires = (oldest + MAX_AGE_DAYS * 86400) if oldest is not None else None
+    return {"files": files, "bytes": total, "oldest_expires": oldest_expires}
+
+
+def _qr_svg(data: str, box: int = 4, border: int = 2) -> str:
+    """Render `data` as a self-contained SVG QR code (no PIL/lxml needed)."""
+    qr = qrcode.QRCode(border=border, box_size=box)
+    qr.add_data(data)
+    qr.make(fit=True)
+    matrix = qr.get_matrix()
+    n = len(matrix)
+    dim = n * box
+    rects = []
+    for r, row in enumerate(matrix):
+        for c, cell in enumerate(row):
+            if cell:
+                rects.append(f'<rect x="{c * box}" y="{r * box}" width="{box}" height="{box}"/>')
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{dim}" height="{dim}" '
+        f'viewBox="0 0 {dim} {dim}" shape-rendering="crispEdges">'
+        f'<rect width="{dim}" height="{dim}" fill="#fff"/>'
+        f'<g fill="#000">{"".join(rects)}</g></svg>'
+    )
+
+
+@app.get("/qr")
+def qr(data: str):
+    if len(data) > 2048:
+        raise HTTPException(414, "data too long")
+    svg = _qr_svg(data)
+    return Response(
+        svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/favicon.svg")
 def favicon():
     return FileResponse(FAVICON_PATH, media_type="image/svg+xml")
@@ -90,6 +165,7 @@ def index(request: Request):
         "index.html",
         {
             "request": request,
+            "version": APP_VERSION,
             "max_upload_mb": MAX_UPLOAD_MB,
             "max_upload_mb_text": MAX_UPLOAD_MB_TEXT,
             "max_age_days": MAX_AGE_DAYS,
@@ -101,7 +177,7 @@ def index(request: Request):
 
 
 @app.post("/upload")
-async def upload(file: UploadFile = File(...)):
+async def upload(request: Request, file: UploadFile = File(...)):
     filename = Path(file.filename or "file").name or "file"
     ext = Path(filename).suffix.lower().lstrip(".")
     if ext in BLOCKED_EXTS:
@@ -127,11 +203,18 @@ async def upload(file: UploadFile = File(...)):
         shutil.rmtree(folder, ignore_errors=True)
         raise
 
-    return JSONResponse({"path": f"/f/{token}", "filename": filename, "size": written})
+    path = f"/f/{token}"
+    # CLI clients (curl with `Accept: text/plain`) get just the full URL back,
+    # so a shell helper needs no JSON parser. Browsers get JSON as before.
+    accept = request.headers.get("accept", "")
+    if "text/plain" in accept and "text/html" not in accept:
+        url = str(request.base_url).rstrip("/") + path
+        return PlainTextResponse(url + "\n")
+    return JSONResponse({"path": path, "filename": filename, "size": written})
 
 
 @app.get("/f/{token}")
-def download(token: str):
+def download(token: str, dl: bool = False):
     if not TOKEN_RE.match(token):
         raise HTTPException(404)
     folder = DATA_DIR / token
@@ -141,5 +224,7 @@ def download(token: str):
     if not files:
         raise HTTPException(404)
     f = files[0]
-    disposition = f"inline; filename*=UTF-8''{quote(f.name)}"
+    # `?dl=1` forces a save dialog; default stays inline so previews/embeds work.
+    disp = "attachment" if dl else "inline"
+    disposition = f"{disp}; filename*=UTF-8''{quote(f.name)}"
     return FileResponse(f, headers={"Content-Disposition": disposition})
