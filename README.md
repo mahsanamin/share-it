@@ -6,6 +6,8 @@ Some things are annoying to move around: a file with no "upload" button, a wall 
 
 No accounts. No cloud. Nothing leaves your network.
 
+![Drop a file and the share link is copied to your clipboard automatically](docs/upload-result.png)
+
 ---
 
 ## Why it exists
@@ -29,10 +31,12 @@ Open the page in your browser and you get a drop zone. Then:
 
 - **Drop a file** in — or paste a screenshot straight from your clipboard (Cmd/Ctrl+V).
 - **The link copies itself** to your clipboard the moment the upload finishes. Nothing else to click.
-- **A QR code appears** next to it, so you can send the file to your phone by pointing its camera at the screen.
+- **One click turns any link into a QR code**, so you can send the file to your phone by pointing its camera at the screen.
 - **Files delete themselves** after 2 days (you can change this), so nothing piles up.
 
 There's also a **Text tab**: paste a code snippet, a log, or any block of text and share *that* as a link too — no file needed.
+
+![The Text tab: paste a log or snippet and share it as a link](docs/text-tab.png)
 
 ## Is it for you?
 
@@ -54,7 +58,7 @@ It's **not** the right tool if you need public sharing, per-person permissions, 
 
 **Paste-to-upload** — Cmd/Ctrl+V uploads whatever's on your clipboard. Screenshot, file, done.
 
-**QR code on every link** — point your phone's camera at it to grab the file. Handy when the two devices don't share a clipboard.
+**QR code for any link** — one click reveals a QR code; point your phone's camera at it to grab the file. Handy when the two devices don't share a clipboard.
 
 **Shell integration** — upload from the terminal, or pipe command output straight to a link:
 
