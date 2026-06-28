@@ -1,46 +1,60 @@
 # share-it
 
-Your own WeTransfer — self-hosted on your private network, no accounts, no cloud.
+**Can't paste it? Drop it here and get a link instead.**
 
-Drag a file in. Copy the link. Paste it anywhere. Files expire automatically.
+Some things are annoying to move around: a file with no "upload" button, a wall of text that gets cut off when you paste it, a screenshot you need on your phone. **share-it** is one small private spot on your own network where you drop any of that and instantly get back a link. Hand the link to another device, a teammate, or an AI chat.
+
+No accounts. No cloud. Nothing leaves your network.
 
 ---
 
-## What it is
+## Why it exists
 
-share-it is a personal file-drop server. Run it on a box inside your Tailscale network and you get a browser drop zone at `https://<your-node>:3050`. Anyone on your tailnet can reach it. No one outside can.
+It started with one specific, repeated annoyance: trying to get a file or a long chunk of text **into an AI coding chat** like Claude Code.
 
-One container. One port. No database. No accounts.
+Sometimes copy-paste worked. Mostly it didn't — the text would silently get cut off, the terminal would freeze, and there's no "attach a file" button to fall back on. This isn't just bad luck; it's a well-known, still-open problem. People hit it constantly:
+
+- Pasted text [truncated mid-word](https://github.com/anthropics/claude-code/issues/13125) when it's long
+- [Large pastes silently dropped](https://github.com/anthropics/claude-code/issues/49673) from the input
+- [100%-reproducible freezing](https://github.com/anthropics/claude-code/issues/50250) on Windows
+- And [no built-in way](https://github.com/anthropics/claude-code/issues/40981) to just hand it a file
+
+The fix turned out to be simple: **stop pasting the content — share a link to it instead.** Drop the file (or the text) into share-it, copy the link it gives you, and pass the link along. No size limits to trip over, no mangled text.
+
+And once it's running, you reach for it everywhere else too: moving a file from your laptop to a server, getting a screenshot onto your phone, sending a log to a colleague — anything where copy-paste or a full cloud upload is more hassle than it's worth.
 
 ## How it works
 
-Upload a file, get a link — in one drag:
+Open the page in your browser and you get a drop zone. Then:
 
-- Drop a file (or paste a screenshot with Cmd/Ctrl+V).
-- The link copies to your clipboard the moment the upload finishes.
-- A QR code appears alongside it so you can beam the file to a phone in one tap.
-- Files delete themselves after 2 days (configurable).
+- **Drop a file** in — or paste a screenshot straight from your clipboard (Cmd/Ctrl+V).
+- **The link copies itself** to your clipboard the moment the upload finishes. Nothing else to click.
+- **A QR code appears** next to it, so you can send the file to your phone by pointing its camera at the screen.
+- **Files delete themselves** after 2 days (you can change this), so nothing piles up.
 
-Not just files — there's a **Text tab** to paste a code snippet or log blob and share that as a link too.
+There's also a **Text tab**: paste a code snippet, a log, or any block of text and share *that* as a link too — no file needed.
 
 ## Is it for you?
 
-- You move files between your own machines, a teammate, or an LLM chat daily.
-- You're already on Tailscale (or another private network).
-- You want a link on your clipboard in under 3 seconds, not a cloud upload wizard.
-- You paste screenshots into LLM chats and hate the friction.
+It's a good fit if:
 
-If you need public sharing, fine-grained permissions, or long-term storage, use Cloudflare R2 + a presigned URL. share-it is for your private network.
+- You regularly need to get a file or some text into an AI chat, onto another machine, or over to a teammate.
+- You'd rather have a link on your clipboard in 3 seconds than fight a cloud upload screen.
+- You run it on a private network you control (a [Tailscale](https://tailscale.com) tailnet, a home/office LAN, or behind your own login).
+
+It's **not** the right tool if you need public sharing, per-person permissions, or long-term storage — for that, use a real cloud service. share-it is deliberately small and private.
 
 ## What you get
 
-**Auto-copy on upload** — the link lands in your clipboard before you look up. No extra click.
+**A link instead of a giant paste** — drop a file or paste text, get a URL back. Share the URL anywhere that chokes on big pastes or has no upload button.
 
 **Text snippets** — paste any text, markdown, or log and get a shareable link. No local file needed.
 
-**Paste-to-upload** — Cmd/Ctrl+V uploads whatever is on your clipboard. Screenshot, file, done.
+**Auto-copy on upload** — the link lands in your clipboard before you even look up. No extra click.
 
-**QR code on every link** — point your phone camera at it. Useful when you're on a laptop and need a file on a device that has no shared clipboard.
+**Paste-to-upload** — Cmd/Ctrl+V uploads whatever's on your clipboard. Screenshot, file, done.
+
+**QR code on every link** — point your phone's camera at it to grab the file. Handy when the two devices don't share a clipboard.
 
 **Shell integration** — upload from the terminal, or pipe command output straight to a link:
 
@@ -52,9 +66,9 @@ share report.pdf
 kubectl logs my-pod | share -
 ```
 
-**Copy as Markdown** — one click to get `![](url)` for images or `[name](url)` otherwise. Paste into docs, issues, LLM context windows.
+**Copy as Markdown** — one click gives you `![](url)` for images or `[name](url)` otherwise. Paste into docs, issues, or an AI's context window.
 
-**Browser history** — your recent uploads stay in the sidebar with thumbnails, so you can re-copy a link from earlier without uploading again.
+**Recent uploads** — your latest drops stay in the sidebar with thumbnails, so you can re-copy an earlier link without uploading again.
 
 **Auto-expiry** — files clean themselves up on a schedule. No manual housekeeping.
 
