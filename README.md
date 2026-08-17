@@ -1,38 +1,86 @@
 # share-it
 
-A tiny self-hosted file drop. Drop files in, get shareable links out. Files clean themselves up on a schedule.
+**Can't paste it? Drop it here and get a link instead.**
 
-One container, one port, no database, no accounts.
+Some things are annoying to move around: a file with no "upload" button, a wall of text that gets cut off when you paste it, a screenshot you need on your phone. **share-it** is one small private spot on your own network where you drop any of that and instantly get back a link. Hand the link to another device, a teammate, or an AI chat.
 
-## Why
+No accounts. No cloud. Nothing leaves your network.
 
-Moving files between your own machines, your phone, a teammate, or pasting them into an LLM chat is more friction than it should be. AirDrop is Apple-only. Drive logs you in and indexes everything. `scp` is fine until it isn't.
+![Drop a file and the share link is copied to your clipboard automatically](docs/upload-result.png)
 
-Run `share-it` on any box on your network — your dev machine, a NAS, a VPS, a Tailscale node — and you get a drop zone at `http://<host>:3050`. Drag a file in, copy the link, paste it wherever you need it. Especially handy when you're working with LLMs and constantly need to hand them a screenshot, a log, or a dataset.
+---
 
-## Features
+## Why it exists
 
-- Drag-and-drop, multi-file uploads, per-file links + Copy-all
-- **Auto-copies the link to your clipboard on upload** (with clear confirmation)
-- **Files / Text tabs** — drop files, or paste a text snippet, with one clear action each
-- **Paste-to-upload** — paste a screenshot (or any clipboard file) with Cmd/Ctrl+V
-- **Share a text snippet** — paste text/markdown, get a link, no local file needed
-- **QR code** for every link — point a phone camera at it to grab the file
-- **Copy as Markdown** — `![](url)` for images, `[name](url)` otherwise
-- **Download** button (`?dl=1`) alongside inline **Open**/preview
-- Random tokenized URLs (`/f/<token>`) — not guessable, not enumerable
-- Auto-expiry — files older than `max_age_days` get swept on a schedule
-- Browser-side history with thumbnails, image/markdown preview, and a live
-  server-storage footer (file count + bytes + next expiry)
-- Size cap and blocked-extension list (executables/installers) via `config.yaml`
-- `GET /healthz` for uptime checks (wired into the Docker `HEALTHCHECK`)
-- Single FastAPI process, runs in Docker, ~200 lines of Python
+It started with one specific, repeated annoyance: trying to get a file or a long chunk of text **into an AI coding chat** like Claude Code.
 
-## Requirements
+Sometimes copy-paste worked. Mostly it didn't — the text would silently get cut off, or the terminal would lock up. This isn't just bad luck; it's a recurring problem, reported over and over across versions and platforms:
 
-Docker with the `compose` plugin.
+- Pasted text [truncated mid-word](https://github.com/anthropics/claude-code/issues/13125) when it's long
+- [Large pastes silently dropped](https://github.com/anthropics/claude-code/issues/49673) from the input
+- The same [truncation on Windows](https://github.com/anthropics/claude-code/issues/50250), in both Git Bash and PowerShell
+- A big paste [freezing the session outright](https://github.com/anthropics/claude-code/issues/25952) — [reported since the early days](https://github.com/anthropics/claude-code/issues/1490)
 
-## Run
+And a paste is the only option at all when the thing you're talking to can't reach your disk — a browser chat, a teammate, a session on another machine.
+
+The fix turned out to be simple: **stop pasting the content — share a link to it instead.** Drop the file (or the text) into share-it, copy the link it gives you, and pass the link along. No size limits to trip over, no mangled text.
+
+And once it's running, you reach for it everywhere else too: moving a file from your laptop to a server, getting a screenshot onto your phone, sending a log to a colleague — anything where copy-paste or a full cloud upload is more hassle than it's worth.
+
+## How it works
+
+Open the page in your browser and you get a drop zone. Then:
+
+- **Drop a file** in — or paste a screenshot straight from your clipboard (Cmd/Ctrl+V).
+- **The link copies itself** to your clipboard the moment the upload finishes. Nothing else to click.
+- **Any link turns into a QR code** (via the `⋯` menu on an upload), so you can send the file to your phone by pointing its camera at the screen.
+- **Files delete themselves** after 2 days (you can change this), so nothing piles up.
+
+There's also a **Text tab**: paste a code snippet, a log, or any block of text and share *that* as a link too — no file needed.
+
+![The Text tab: paste a log or snippet and share it as a link](docs/text-tab.png)
+
+## Is it for you?
+
+It's a good fit if:
+
+- You regularly need to get a file or some text into an AI chat, onto another machine, or over to a teammate.
+- You'd rather have a link on your clipboard in 3 seconds than fight a cloud upload screen.
+- You run it on a private network you control (a [Tailscale](https://tailscale.com) tailnet, a home/office LAN, or behind your own login).
+
+It's **not** the right tool if you need public sharing, per-person permissions, or long-term storage — for that, use a real cloud service. share-it is deliberately small and private.
+
+## What you get
+
+**A link instead of a giant paste** — drop a file or paste text, get a URL back. Share the URL anywhere that chokes on big pastes or has no upload button.
+
+**Text snippets** — paste any text, markdown, or log and get a shareable link. No local file needed.
+
+**Auto-copy on upload** — the link lands in your clipboard before you even look up. No extra click.
+
+**Paste-to-upload** — Cmd/Ctrl+V uploads whatever's on your clipboard. Screenshot, file, done.
+
+**QR code for any link** — open the `⋯` menu on an upload and hit **QR**; point your phone's camera at it to grab the file. Handy when the two devices don't share a clipboard.
+
+**Shell integration** — upload from the terminal, or pipe command output straight to a link:
+
+```bash
+# Upload a file
+share report.pdf
+
+# Upload piped output (e.g. a log, a JSON dump)
+kubectl logs my-pod | share -
+```
+
+**Copy as Markdown** — **Copy MD** in the same `⋯` menu gives you `![](url)` for images or `[name](url)` otherwise. Paste into docs, issues, or an AI's context window.
+
+**Recent uploads** — your latest drops stay listed below the drop zone with thumbnails and a countdown to expiry, so you can re-copy an earlier link without uploading again.
+
+**Auto-expiry** — files clean themselves up on a schedule. No manual housekeeping.
+
+## Quick start
+
+Requirements: Docker with the Compose plugin.
 
 ```bash
 git clone <repo-url> share-it
@@ -42,62 +90,95 @@ make up
 
 Open http://localhost:3050
 
-## Stop
+That's it. By default the server binds to `127.0.0.1:3050` (loopback only). To make it reachable from other machines, choose one approach:
+
+**Tailscale** (recommended — HTTPS for free, no firewall rules):
 
 ```bash
-make down
+cp .env.example .env     # leave BIND_ADDR=127.0.0.1
+tailscale serve https:443 / http://127.0.0.1:3050
+```
+
+Your drop zone is then at `https://<your-node>.<tailnet>.ts.net`.
+
+**LAN / trusted network** — set `BIND_ADDR` to a specific LAN IP (e.g. `192.168.1.10`) or `0.0.0.0` in `.env`, then `make restart`. Only do this on a network you control.
+
+## Stop / restart
+
+```bash
+make down        # stop and remove the container
+make restart     # restart after a config change
 ```
 
 ## Configure
 
-Edit `config.yaml` for app behaviour (max age, max upload size, blocked extensions, cleanup interval), then `make restart`.
+Edit `config.yaml` for app behaviour, then `make restart`:
 
-The host-port binding lives in a gitignored `.env`. Copy the template once:
+| Key | Default | What it does |
+|-----|---------|--------------|
+| `max_age_days` | `2` | Files older than this are swept on the next cleanup run |
+| `max_upload_mb` | `1024` | Size cap for binary files |
+| `max_upload_mb_text` | `2` | Smaller cap for `.txt` / `.md` uploads |
+| `cleanup_interval_sec` | `3600` | How often the sweeper runs |
+| `blocked_extensions` | (long list) | Extensions rejected at upload (executables, installers) |
+
+The host-port binding lives in a gitignored `.env`. Copy the template to change `BIND_ADDR` or `HOST_PORT`:
 
 ```bash
 cp .env.example .env
+# edit BIND_ADDR and HOST_PORT, then:
+make restart
 ```
 
-Then edit `.env` to change `BIND_ADDR` (default `127.0.0.1`) or `HOST_PORT` (default `3050`) — e.g. set `BIND_ADDR=0.0.0.0` to expose on all interfaces, or to a specific Tailscale/LAN IP. Run `make restart` after editing.
+## Shell helper
 
-## Command line
+A ready-made `share` function lives in `scripts/share.sh`. Source it from your shell rc to make `share` available everywhere:
 
-`POST /upload` takes a multipart `file` field and returns JSON
-`{"path": "/f/<token>", "filename": ..., "size": ...}`. Send `Accept: text/plain`
-to get back just the full URL instead — handy for shell scripts:
+```bash
+echo 'source /path/to/share-it/scripts/share.sh' >> ~/.zshrc
+export SHARE_IT_HOST=https://your-node.ts.net   # or http://localhost:3050
+```
+
+Usage:
+
+```bash
+share screenshot.png          # prints + copies the link
+some_command | share -        # upload piped output as stdout.txt
+```
+
+The script auto-detects `pbcopy` (macOS), `wl-copy` (Wayland), or `xclip` (X11) and puts the link in your clipboard.
+
+## Raw API
+
+`POST /upload` accepts a multipart `file` field. Send `Accept: text/plain` to get just the URL back — no JSON parsing needed in shell scripts:
 
 ```bash
 curl -sf -H "Accept: text/plain" -F "file=@report.pdf" http://localhost:3050/upload
 ```
 
-A ready-made helper lives in `scripts/share.sh`:
+Other endpoints:
 
-```bash
-source scripts/share.sh          # add to ~/.zshrc to keep it
-export SHARE_IT_HOST=http://localhost:3050   # or your Tailscale URL
-
-share screenshot.png             # prints + copies the link
-some_command | share -           # upload piped output as stdout.txt
-```
-
-Other endpoints: `GET /healthz` (liveness), `GET /stats` (file count + bytes),
-`GET /qr?data=<url>` (SVG QR code), `GET /f/<token>?dl=1` (force download).
-
-## Versioning
-
-The current version lives in a single `VERSION` file (SemVer). It's shown in the
-page footer and returned by `GET /version` and `GET /healthz`.
-
-Bump it with one command, then redeploy:
-
-```bash
-make bump-patch   # 0.2.0 -> 0.2.1  (bug fixes)
-make bump-minor   # 0.2.0 -> 0.3.0  (new features, backwards compatible)
-make bump-major   # 0.2.0 -> 1.0.0  (breaking changes)
-make up           # rebuild + restart so the new version ships
-make version      # print the current version
-```
+| Endpoint | What it does |
+|----------|--------------|
+| `GET /f/<token>` | Serve the file inline |
+| `GET /f/<token>?dl=1` | Force a save dialog |
+| `GET /healthz` | Liveness check (also returns version) |
+| `GET /stats` | File count, total bytes, next expiry |
+| `GET /qr?data=<url>` | SVG QR code for any URL |
+| `GET /version` | Current version string |
 
 ## Security
 
-There is no authentication. Anyone with a link can download the file until it is swept. Run it on a network you trust (LAN, Tailscale, Wireguard) or put it behind your own auth proxy.
+There is no authentication. Anyone who can reach the port can download files by link. Run it on a network you trust (Tailscale, WireGuard, a LAN) or put it behind your own auth proxy. Do not bind to `0.0.0.0` on a host with a public IP.
+
+## Versioning
+
+The current version is in `VERSION` (SemVer). It appears in the page footer and in `/healthz`.
+
+```bash
+make bump-patch   # 0.2.3 -> 0.2.4  (bug fixes)
+make bump-minor   # 0.2.3 -> 0.3.0  (new features)
+make bump-major   # 0.2.3 -> 1.0.0  (breaking changes)
+make up           # rebuild + redeploy
+make version      # print current version
+```
