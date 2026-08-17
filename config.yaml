@@ -19,6 +19,13 @@ max_upload_mb_text: 2
 # secrets.token_urlsafe(N) -> ~1.3 * N chars. 16 -> 22-char tokens.
 token_bytes: 16
 
+# Live pad (the "Live" tab): size cap for the shared text buffer.
+pad_max_kb: 128
+
+# How many entries the shared list holds before the oldest drop off it.
+# Dropping off the list does not delete the file; the sweeper still owns that.
+shared_max_items: 500
+
 # File extensions rejected by /upload. Lowercase, no leading dot.
 # Empty list disables the check. Default: executables, installers, and
 # OS-level scripts that auto-run on click.

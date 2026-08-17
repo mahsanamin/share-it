@@ -97,6 +97,29 @@
       .summary.copied #summaryText { color: #6ee7b7; }
     }
 
+    /* Opt-in switch: put this upload on the list everyone here can see. */
+    .share-toggle { display: flex; align-items: flex-start; gap: 0.5rem;
+                    margin: -0.25rem 0 0.9rem; font-size: 0.85rem; }
+    .share-toggle input { margin: 0.15rem 0 0; width: 1rem; height: 1rem;
+                          accent-color: #2563eb; flex: 0 0 auto; cursor: pointer; }
+    .share-toggle label { cursor: pointer; }
+    .share-toggle .sub { display: block; opacity: 0.6; font-size: 0.78rem; }
+
+    /* Live pad */
+    .live-head { display: flex; align-items: center; justify-content: space-between;
+                 gap: 0.5rem; font-size: 0.82rem; }
+    .live-status { display: flex; align-items: center; gap: 0.4rem; opacity: 0.8;
+                   min-width: 0; overflow: hidden; text-overflow: ellipsis;
+                   white-space: nowrap; }
+    .live-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%;
+                background: #9ca3af; flex: 0 0 auto; }
+    .live-dot.on { background: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.18); }
+    .live-dot.off { background: #f59e0b; }
+    .live-actions { display: flex; gap: 0.35rem; flex: 0 0 auto; }
+    #padText { min-height: 260px; }
+
+    .shared { margin-top: 2.5rem; }
+
     .qr-wrap { margin-top: 0.5rem; }
     .qr-wrap img { width: 132px; height: 132px; border-radius: 6px;
                    background: #fff; padding: 4px; }
@@ -301,6 +324,15 @@
   <div class="tabs" role="tablist">
     <button type="button" class="tab active" id="tabFiles" role="tab" aria-selected="true">Files</button>
     <button type="button" class="tab" id="tabText" role="tab" aria-selected="false">Text</button>
+    <button type="button" class="tab" id="tabLive" role="tab" aria-selected="false">Live</button>
+  </div>
+
+  <div class="share-toggle" id="shareToggleRow">
+    <input type="checkbox" id="shareToggle" />
+    <label for="shareToggle">
+      Show it to everyone on this page
+      <span class="sub">Off: only you get the link. On: it's listed below for anyone who opens this URL.</span>
+    </label>
   </div>
 
   <form id="f">
@@ -334,6 +366,26 @@
     </div>
   </div>
 
+  <div class="text-panel" id="livePanel" hidden>
+    <div class="live-head">
+      <span class="live-status">
+        <span class="live-dot" id="liveDot"></span>
+        <span id="liveStatus">connecting…</span>
+      </span>
+      <span class="live-actions">
+        <button class="ghost" type="button" id="padCopy">Copy</button>
+        <button class="ghost" type="button" id="padClear">Clear</button>
+      </span>
+    </div>
+    <textarea id="padText"
+      placeholder="Type or paste here. Everyone with this page open sees it as you type — a clipboard shared over your network."></textarea>
+    <div class="meta" id="padHint">
+      Shared by everyone on this URL, no accounts. Up to {{ pad_max_kb }} KB.
+      From a terminal: <code>curl -s $HOST/pad</code> reads it,
+      <code>cmd | curl -sf --data-binary @- $HOST/pad</code> writes it.
+    </div>
+  </div>
+
   <div id="summary" class="summary" hidden>
     <span id="summaryText"></span>
     <span class="summary-actions">
@@ -342,6 +394,17 @@
     </span>
   </div>
   <div id="out" class="results"></div>
+
+  <section class="shared" id="sharedSection" hidden>
+    <div class="history-head">
+      <h2>Shared on this page<span class="count" id="sharedCount"></span></h2>
+    </div>
+    <div class="history-sub">
+      Everyone who opens this URL sees these, and new ones appear live.
+      Removing one only takes it off this list — the link keeps working until it expires.
+    </div>
+    <div class="hist-group-grid" id="sharedGrid"></div>
+  </section>
 
   <section class="history" id="history" hidden>
     <div class="history-head">
@@ -444,27 +507,38 @@
       stageAndUpload(named);
     });
 
-    // ----- Files / Text tab toggle -----
-    const tabFiles = document.getElementById('tabFiles');
-    const tabText = document.getElementById('tabText');
+    // ----- Files / Text / Live tabs -----
     const filesForm = document.getElementById('f');
     const textPanel = document.getElementById('textPanel');
+    const livePanel = document.getElementById('livePanel');
     const snippetText = document.getElementById('snippetText');
     const snippetName = document.getElementById('snippetName');
     const snippetShare = document.getElementById('snippetShare');
+    const shareToggle = document.getElementById('shareToggle');
+    const shareToggleRow = document.getElementById('shareToggleRow');
+    const padText = document.getElementById('padText');
+
+    const TABS = {
+      files: { btn: document.getElementById('tabFiles'), panel: filesForm },
+      text:  { btn: document.getElementById('tabText'),  panel: textPanel },
+      live:  { btn: document.getElementById('tabLive'),  panel: livePanel },
+    };
 
     function selectTab(which) {
-      const text = which === 'text';
-      tabText.classList.toggle('active', text);
-      tabFiles.classList.toggle('active', !text);
-      tabText.setAttribute('aria-selected', String(text));
-      tabFiles.setAttribute('aria-selected', String(!text));
-      textPanel.hidden = !text;
-      filesForm.hidden = text;
-      if (text) snippetText.focus();
+      Object.entries(TABS).forEach(([name, t]) => {
+        const on = name === which;
+        t.btn.classList.toggle('active', on);
+        t.btn.setAttribute('aria-selected', String(on));
+        t.panel.hidden = !on;
+      });
+      // The share checkbox governs uploads, so it has no meaning on the pad —
+      // the pad is shared with everyone by definition.
+      shareToggleRow.hidden = which === 'live';
+      if (which === 'text') snippetText.focus();
+      if (which === 'live') padText.focus();
     }
-    tabFiles.addEventListener('click', () => selectTab('files'));
-    tabText.addEventListener('click', () => selectTab('text'));
+    Object.entries(TABS).forEach(([name, t]) =>
+      t.btn.addEventListener('click', () => selectTab(name)));
 
     // Share a text snippet without saving a file first.
     snippetText.addEventListener('input', () => {
@@ -509,10 +583,11 @@
       return ok;
     }
 
-    function uploadOne(file, slot, batchId) {
+    function uploadOne(file, slot, batchId, shared) {
       return new Promise((resolve) => {
         const fd = new FormData();
         fd.append('file', file);
+        if (shared) fd.append('shared', '1');
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/upload');
         xhr.upload.onprogress = (ev) => {
@@ -629,6 +704,8 @@
       summary.hidden = true;
       uploadedUrls = [];
       const batchId = newBatchId();
+      // Read the checkbox once, so toggling it mid-batch can't split a batch.
+      const shareThis = shareToggle.checked;
 
       const slots = files.map((file) => {
         const div = document.createElement('div');
@@ -644,7 +721,7 @@
 
       let ok = 0, fail = 0;
       for (let i = 0; i < files.length; i++) {
-        const r = await uploadOne(files[i], slots[i], batchId);
+        const r = await uploadOne(files[i], slots[i], batchId, shareThis);
         if (r.ok) ok++; else fail++;
       }
 
@@ -659,7 +736,8 @@
         copyAllBtn.textContent = n > 1 ? 'Copy all links' : 'Copy link';
         const autoCopied = await copyText(uploadedUrls.join('\n'));
         summary.classList.toggle('copied', autoCopied);
-        const failNote = fail ? ` · ${fail} failed` : '';
+        const failNote = (fail ? ` · ${fail} failed` : '') +
+                         (shareThis ? ' · shared on this page' : '');
         if (autoCopied) {
           summaryText.textContent = n > 1
             ? `✓ ${n} links copied to clipboard${failNote}`
@@ -1106,8 +1184,218 @@
       } catch (_) {}
     }
 
+    // ----- Live layer: shared list + shared pad, over one WebSocket -----
+    const sharedSection = document.getElementById('sharedSection');
+    const sharedGrid = document.getElementById('sharedGrid');
+    const sharedCount = document.getElementById('sharedCount');
+    const liveDot = document.getElementById('liveDot');
+    const liveStatus = document.getElementById('liveStatus');
+    const padCopy = document.getElementById('padCopy');
+    const padClear = document.getElementById('padClear');
+
+    let sharedItems = [];
+    let myId = null;
+    let padRev = -1;
+    let lastLocalEdit = 0;
+    let ws = null;
+    let wsRetry = 1000;
+    let padSendTimer = null;
+
+    function setLive(state, label) {
+      liveDot.className = 'live-dot' + (state ? ' on' : ' off');
+      liveStatus.textContent = label;
+    }
+
+    function fmtSize(bytes) {
+      const mb = (bytes || 0) / 1024 / 1024;
+      return mb >= 0.01 ? `${mb.toFixed(2)} MB` : `${Math.max(1, Math.round((bytes || 0) / 1024))} KB`;
+    }
+
+    function makeSharedCard(it) {
+      const url = window.location.origin + '/f/' + it.token;
+      const ext = fileExt(it.filename);
+      const isImage = IMAGE_EXTS.has(ext);
+      const badge = (ext || 'FILE').toUpperCase().slice(0, 5);
+
+      const card = document.createElement('div');
+      card.className = 'hist-item';
+      card.dataset.token = it.token;
+      card.innerHTML = `
+        <div class="hist-thumb-wrap">${isImage
+          ? '<img class="hist-thumb" alt="" loading="lazy" />'
+          : `<div class="hist-thumb hist-thumb-text" tabindex="0">${escapeHtml(badge)}</div>`}</div>
+        <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
+        <div class="hist-meta">${fmtSize(it.size)} · ${fmtAge(Date.now() - (it.at || 0) * 1000)}</div>
+        <div class="hist-actions">
+          <button type="button" class="copy">Copy</button>
+          <a class="open" target="_blank" rel="noopener">Open</a>
+          <button type="button" class="del" title="Take off the shared list">×</button>
+        </div>
+      `;
+      const thumb = card.querySelector('.hist-thumb');
+      card.querySelector('.open').href = url;
+      if (isImage) { thumb.src = url; thumb.alt = it.filename; }
+
+      const canPreview = isImage || TEXT_EXTS.has(ext);
+      if (canPreview) {
+        const openZoom = () => openLightbox(url, it.filename, it.size);
+        thumb.addEventListener('click', openZoom);
+        card.querySelector('.open').addEventListener('click', (e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          openZoom();
+        });
+      } else {
+        thumb.style.cursor = 'default';
+      }
+
+      const copyBtn = card.querySelector('.copy');
+      copyBtn.onclick = async () => {
+        const ok = await copyText(url);
+        copyBtn.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+      };
+      card.querySelector('.del').onclick = async () => {
+        try {
+          const r = await fetch('/shared/' + encodeURIComponent(it.token), { method: 'DELETE' });
+          // The broadcast updates every other page; drop it here too so the
+          // click still works when the socket is down.
+          if (r.ok) {
+            sharedItems = sharedItems.filter(i => i.token !== it.token);
+            renderShared();
+          }
+        } catch (_) {}
+      };
+      return card;
+    }
+
+    function renderShared() {
+      sharedSection.hidden = sharedItems.length === 0;
+      sharedCount.textContent = sharedItems.length ? `(${sharedItems.length})` : '';
+      sharedGrid.innerHTML = '';
+      sharedItems.forEach(it => sharedGrid.appendChild(makeSharedCard(it)));
+    }
+
+    // Replace the pad's text without yanking the caret out from under a typist.
+    function applyRemotePad(text, rev) {
+      if (rev <= padRev) return;
+      padRev = rev;
+      if (padText.value === text) return;
+      const focused = document.activeElement === padText;
+      // Our own in-flight keystrokes are about to win anyway; don't fight them.
+      if (focused && Date.now() - lastLocalEdit < 600) return;
+      const before = padText.value;
+      const start = padText.selectionStart;
+      padText.value = text;
+      if (!focused) return;
+      let i = 0;
+      while (i < before.length && i < text.length && before[i] === text[i]) i++;
+      // Change landed after the caret: leave it. Before it: shift by the delta.
+      const caret = i >= start ? start : start + (text.length - before.length);
+      const clamped = Math.max(0, Math.min(text.length, caret));
+      padText.setSelectionRange(clamped, clamped);
+    }
+
+    function sendPad() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: 'pad', text: padText.value }));
+    }
+
+    padText.addEventListener('input', () => {
+      lastLocalEdit = Date.now();
+      clearTimeout(padSendTimer);
+      padSendTimer = setTimeout(sendPad, 180);
+    });
+    // Don't leave the last word un-synced if they tab away mid-debounce.
+    padText.addEventListener('blur', () => { clearTimeout(padSendTimer); sendPad(); });
+
+    padCopy.addEventListener('click', async () => {
+      const ok = await copyText(padText.value);
+      padCopy.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
+      setTimeout(() => { padCopy.textContent = 'Copy'; }, 1500);
+    });
+    padClear.addEventListener('click', () => {
+      if (padText.value && !confirm('Clear the shared pad for everyone on this page?')) return;
+      padText.value = '';
+      lastLocalEdit = Date.now();
+      sendPad();
+    });
+
+    function connect() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+      try { ws = new WebSocket(proto + location.host + '/ws'); } catch (_) { return; }
+
+      ws.onopen = () => { wsRetry = 1000; setLive(true, 'live'); };
+      ws.onmessage = (ev) => {
+        let m;
+        try { m = JSON.parse(ev.data); } catch (_) { return; }
+        if (m.type === 'init') {
+          myId = m.you;
+          sharedItems = m.shared || [];
+          renderShared();
+          applyRemotePad((m.pad && m.pad.text) || '', (m.pad && m.pad.rev) || 0);
+          setLive(true, describeClients(m.clients));
+        } else if (m.type === 'pad') {
+          if (m.origin === myId) { padRev = Math.max(padRev, m.rev); return; }
+          applyRemotePad(m.text, m.rev);
+        } else if (m.type === 'shared_add') {
+          sharedItems = [m.item, ...sharedItems.filter(i => i.token !== m.item.token)];
+          renderShared();
+        } else if (m.type === 'shared_del') {
+          sharedItems = sharedItems.filter(i => i.token !== m.token);
+          renderShared();
+        } else if (m.type === 'presence') {
+          setLive(true, describeClients(m.clients));
+        } else if (m.type === 'error') {
+          setLive(true, m.message || 'error');
+        }
+      };
+      ws.onclose = () => {
+        setLive(false, 'offline — reconnecting…');
+        setTimeout(connect, wsRetry);
+        wsRetry = Math.min(wsRetry * 2, 15000);
+      };
+      ws.onerror = () => { try { ws.close(); } catch (_) {} };
+    }
+
+    function describeClients(n) {
+      if (!n || n <= 1) return 'live · just this tab';
+      return `live · ${n} tabs connected`;
+    }
+
+    // Come back fast when the network or the tab wakes up, instead of waiting
+    // out the backoff.
+    window.addEventListener('online', () => { wsRetry = 1000; connect(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') connect();
+    });
+
+    // HTTP fallback: if a proxy refuses the WebSocket upgrade, the shared list
+    // and the pad still load — they just stop being live.
+    async function refreshShared() {
+      try {
+        const r = await fetch('/shared');
+        if (!r.ok) return;
+        const j = await r.json();
+        sharedItems = j.items || [];
+        renderShared();
+      } catch (_) {}
+    }
+    async function loadPadOnce() {
+      try {
+        const r = await fetch('/pad');
+        if (!r.ok) return;
+        const j = await r.json();
+        applyRemotePad(j.text || '', j.rev || 0);
+      } catch (_) {}
+    }
+
     renderHistory();
     refreshStats();
+    refreshShared();
+    loadPadOnce();
+    connect();
   </script>
 </body>
 </html>
