@@ -14,12 +14,14 @@ No accounts. No cloud. Nothing leaves your network.
 
 It started with one specific, repeated annoyance: trying to get a file or a long chunk of text **into an AI coding chat** like Claude Code.
 
-Sometimes copy-paste worked. Mostly it didn't — the text would silently get cut off, the terminal would freeze, and there's no "attach a file" button to fall back on. This isn't just bad luck; it's a well-known, still-open problem. People hit it constantly:
+Sometimes copy-paste worked. Mostly it didn't — the text would silently get cut off, or the terminal would lock up. This isn't just bad luck; it's a recurring problem, reported over and over across versions and platforms:
 
 - Pasted text [truncated mid-word](https://github.com/anthropics/claude-code/issues/13125) when it's long
 - [Large pastes silently dropped](https://github.com/anthropics/claude-code/issues/49673) from the input
-- [100%-reproducible freezing](https://github.com/anthropics/claude-code/issues/50250) on Windows
-- And [no built-in way](https://github.com/anthropics/claude-code/issues/40981) to just hand it a file
+- The same [truncation on Windows](https://github.com/anthropics/claude-code/issues/50250), in both Git Bash and PowerShell
+- A big paste [freezing the session outright](https://github.com/anthropics/claude-code/issues/25952) — [reported since the early days](https://github.com/anthropics/claude-code/issues/1490)
+
+And a paste is the only option at all when the thing you're talking to can't reach your disk — a browser chat, a teammate, a session on another machine.
 
 The fix turned out to be simple: **stop pasting the content — share a link to it instead.** Drop the file (or the text) into share-it, copy the link it gives you, and pass the link along. No size limits to trip over, no mangled text.
 
@@ -31,7 +33,7 @@ Open the page in your browser and you get a drop zone. Then:
 
 - **Drop a file** in — or paste a screenshot straight from your clipboard (Cmd/Ctrl+V).
 - **The link copies itself** to your clipboard the moment the upload finishes. Nothing else to click.
-- **One click turns any link into a QR code**, so you can send the file to your phone by pointing its camera at the screen.
+- **Any link turns into a QR code** (via the `⋯` menu on an upload), so you can send the file to your phone by pointing its camera at the screen.
 - **Files delete themselves** after 2 days (you can change this), so nothing piles up.
 
 There's also a **Text tab**: paste a code snippet, a log, or any block of text and share *that* as a link too — no file needed.
@@ -58,7 +60,7 @@ It's **not** the right tool if you need public sharing, per-person permissions, 
 
 **Paste-to-upload** — Cmd/Ctrl+V uploads whatever's on your clipboard. Screenshot, file, done.
 
-**QR code for any link** — one click reveals a QR code; point your phone's camera at it to grab the file. Handy when the two devices don't share a clipboard.
+**QR code for any link** — open the `⋯` menu on an upload and hit **QR**; point your phone's camera at it to grab the file. Handy when the two devices don't share a clipboard.
 
 **Shell integration** — upload from the terminal, or pipe command output straight to a link:
 
@@ -70,9 +72,9 @@ share report.pdf
 kubectl logs my-pod | share -
 ```
 
-**Copy as Markdown** — one click gives you `![](url)` for images or `[name](url)` otherwise. Paste into docs, issues, or an AI's context window.
+**Copy as Markdown** — **Copy MD** in the same `⋯` menu gives you `![](url)` for images or `[name](url)` otherwise. Paste into docs, issues, or an AI's context window.
 
-**Recent uploads** — your latest drops stay in the sidebar with thumbnails, so you can re-copy an earlier link without uploading again.
+**Recent uploads** — your latest drops stay listed below the drop zone with thumbnails and a countdown to expiry, so you can re-copy an earlier link without uploading again.
 
 **Auto-expiry** — files clean themselves up on a schedule. No manual housekeeping.
 
