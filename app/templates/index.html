@@ -152,16 +152,39 @@
     .hist-group { display: flex; flex-direction: column; gap: 0.45rem; }
     .hist-group-head {
       display: flex; justify-content: space-between; align-items: center;
-      gap: 0.5rem; font-size: 0.78rem; opacity: 0.85;
+      gap: 0.5rem 0.4rem; flex-wrap: wrap; font-size: 0.78rem; opacity: 0.85;
       padding-bottom: 0.25rem;
       border-bottom: 1px dashed rgba(127,127,127,0.3);
     }
-    .hist-group-head > span:first-child { font-weight: 500; }
-    .hist-group-actions { display: flex; gap: 0.3rem; }
+    .hist-group-label { display: flex; align-items: center; gap: 0.4rem;
+                        font-weight: 500; min-width: 0; }
+    .hist-group-label input[type=checkbox] {
+      margin: 0; width: 0.95rem; height: 0.95rem;
+      accent-color: #2563eb; cursor: pointer; flex: 0 0 auto;
+    }
+    .hist-group-actions { display: flex; gap: 0.3rem; flex-wrap: wrap;
+                          justify-content: flex-end; margin-left: auto; }
     .hist-group-actions button {
       padding: 0.15rem 0.5rem; font-size: 0.72rem;
       border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
       background: transparent; color: inherit; cursor: pointer;
+    }
+    /* Second row of group actions, behind the ⋯ toggle. */
+    .hist-group-more {
+      display: flex; gap: 0.3rem; flex-wrap: wrap;
+      flex-basis: 100%; justify-content: flex-end;
+    }
+    .hist-group-more button {
+      padding: 0.15rem 0.5rem; font-size: 0.72rem;
+      border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
+      background: transparent; color: inherit; cursor: pointer;
+    }
+    /* Anything that destroys data on the server reads as destructive. */
+    .danger { color: #b91c1c; border-color: rgba(185,28,28,0.5) !important; }
+    .danger:hover { background: rgba(185,28,28,0.1); }
+    @media (prefers-color-scheme: dark) {
+      .danger { color: #fca5a5; border-color: rgba(252,165,165,0.4) !important; }
+      .danger:hover { background: rgba(252,165,165,0.12); }
     }
     .hist-group-grid {
       display: grid; gap: 0.6rem;
@@ -173,6 +196,53 @@
       background: rgba(127,127,127,0.05);
     }
     .hist-thumb-wrap { position: relative; width: 100%; aspect-ratio: 1 / 1; }
+    .hist-pick {
+      position: absolute; top: 0.25rem; left: 0.25rem; z-index: 2;
+      display: flex; align-items: center; justify-content: center;
+      width: 1.5rem; height: 1.5rem; border-radius: 4px;
+      /* Its own backdrop, so the box stays visible on any thumbnail. */
+      background: rgba(255,255,255,0.85);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    @media (prefers-color-scheme: dark) {
+      .hist-pick { background: rgba(20,24,33,0.85);
+                   box-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+    }
+    .hist-pick input[type=checkbox] {
+      margin: 0; width: 1rem; height: 1rem;
+      accent-color: #2563eb; cursor: pointer;
+    }
+    .hist-item.picked {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37,99,235,0.35);
+      background: rgba(37,99,235,0.07);
+    }
+    /* Action bar: appears only once something is selected. Pinned to the
+       viewport, so it is reachable from anywhere on a long page. */
+    #selectBar {
+      position: fixed; z-index: 50;
+      left: 50%; transform: translateX(-50%); bottom: 0.75rem;
+      width: min(calc(100vw - 2rem), 640px);
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid #2563eb; border-radius: 8px;
+      background: #dbeafe; color: #0b1220;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      font-size: 0.85rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      #selectBar { background: #10233f; color: #e6edf7; }
+    }
+    /* Keep the bar from covering the last row of cards. */
+    body.has-selection { padding-bottom: 5.5rem; }
+    #selectBar .sel-count { font-weight: 600; margin-right: auto; }
+    #selectBar button {
+      padding: 0.25rem 0.6rem; font-size: 0.8rem;
+      border: 1px solid rgba(127,127,127,0.6); border-radius: 4px;
+      background: transparent; color: inherit; cursor: pointer;
+    }
+    #selectBar button:hover { background: rgba(127,127,127,0.15); }
+    #selectBar button.go { background: #2563eb; color: #fff; border-color: #2563eb; }
     .hist-thumb {
       width: 100%; height: 100%; object-fit: cover; border-radius: 4px;
       background: rgba(127,127,127,0.15); cursor: zoom-in; display: block;
@@ -205,9 +275,10 @@
     }
     .hist-actions .del, .hist-actions .more { flex: 0 0 auto; padding: 0.2rem 0.45rem; opacity: 0.7; }
     .hist-actions .del:hover, .hist-actions .more:hover { opacity: 1; }
-    .hist-more { display: flex; gap: 0.3rem; margin-top: 0.3rem; align-items: stretch; }
+    .hist-more { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem;
+                 align-items: stretch; }
     .hist-more button, .hist-more a {
-      flex: 1; padding: 0.2rem 0.3rem; font-size: 0.72rem;
+      flex: 1 1 42%; padding: 0.2rem 0.3rem; font-size: 0.72rem;
       border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
       background: transparent; color: inherit; cursor: pointer;
       text-align: center; text-decoration: none; line-height: 1.2;
@@ -401,9 +472,10 @@
     </div>
     <div class="history-sub">
       Everyone who opens this URL sees these, and new ones appear live.
-      Removing one only takes it off this list — the link keeps working until it expires.
+      Removing one only takes it off this list — the link keeps working until it
+      expires. <strong>Delete</strong> removes the file from the server for good.
     </div>
-    <div class="hist-group-grid" id="sharedGrid"></div>
+    <div class="history-grid" id="sharedGrid"></div>
   </section>
 
   <section class="history" id="history" hidden>
@@ -413,9 +485,20 @@
     </div>
     <div class="history-sub">
       Saved in this browser only. Entries auto-expire after {{ max_age_days }} day(s) — matching server cleanup.
+      Tick files to download them as one zip; <strong>⋯ &rarr; Share</strong> puts
+      one on the shared list at any time.
     </div>
     <div class="history-grid" id="historyGrid"></div>
   </section>
+
+  <div id="selectBar" hidden>
+    <span class="sel-count" id="selCount"></span>
+    <button type="button" class="go" id="selDownload">Download zip</button>
+    <button type="button" id="selCopy">Copy links</button>
+    <button type="button" id="selShare">Share</button>
+    <button type="button" class="danger" id="selDelete">Delete</button>
+    <button type="button" id="selClear" title="Clear the selection">Clear</button>
+  </div>
 
   <footer class="stats-footer" id="statsFooter">
     <span id="statsLine"></span><span id="statsSep" hidden> · </span>share-it v{{ version }}
@@ -588,6 +671,9 @@
         const fd = new FormData();
         fd.append('file', file);
         if (shared) fd.append('shared', '1');
+        // One request per file, one batch id across them: the server uses it to
+        // keep a multi-file upload together on the shared list.
+        if (batchId) fd.append('batch', batchId);
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/upload');
         xhr.upload.onprogress = (ev) => {
@@ -673,7 +759,7 @@
       };
     }
     // Lazily insert the QR <img> the first time the toggle is clicked.
-    function wireQrToggle(btn, wrap, url, cls) {
+    function wireQrToggle(btn, wrap, url) {
       if (!btn || !wrap) return;
       btn.onclick = () => {
         if (wrap.hidden && !wrap.firstChild) {
@@ -994,66 +1080,260 @@
       }, 300);
     }
 
-    function makeHistCard(it) {
-      const url = window.location.origin + it.path;
+    // ----- Selection, bulk download, sharing after the fact, real deletion -----
+    // All of it keyed on the file's token, so the same file ticked in Recent
+    // uploads and in the shared list counts once, not twice.
+    const selectBar = document.getElementById('selectBar');
+    const selCount = document.getElementById('selCount');
+    const selDownloadBtn = document.getElementById('selDownload');
+    const selCopyBtn = document.getElementById('selCopy');
+    const selShareBtn = document.getElementById('selShare');
+    const selDeleteBtn = document.getElementById('selDelete');
+    const selClearBtn = document.getElementById('selClear');
+
+    const selected = new Set();
+    // Mirrors the server cap in main.py: the tokens ride in the query string.
+    const MAX_ZIP_FILES = 200;
+
+    function tokenOf(path) { return String(path || '').replace(/^\/f\//, ''); }
+    function urlForToken(token) { return window.location.origin + '/f/' + token; }
+
+    function zipUrl(tokens, name) {
+      const q = tokens.map(t => 't=' + encodeURIComponent(t)).join('&');
+      return '/zip?' + q + (name ? '&name=' + encodeURIComponent(name) : '');
+    }
+
+    // A click on a throwaway link, not a navigation: the response comes back as
+    // an attachment, so the browser saves it and the page stays where it is.
+    function startDownload(url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function downloadTokens(tokens, name) {
+      const list = Array.from(new Set(tokens)).filter(Boolean);
+      if (!list.length) return;
+      // One file needs no archive — hand back the file itself.
+      if (list.length === 1) { startDownload(urlForToken(list[0]) + '?dl=1'); return; }
+      if (list.length > MAX_ZIP_FILES) {
+        alert(`One zip holds up to ${MAX_ZIP_FILES} files — you picked ${list.length}.`);
+        return;
+      }
+      startDownload(zipUrl(list, name));
+    }
+
+    async function shareTokens(tokens) {
+      const list = Array.from(new Set(tokens)).filter(Boolean);
+      if (!list.length) return null;
+      let j = null;
+      try {
+        const r = await fetch('/shared', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokens: list }),
+        });
+        if (!r.ok) return null;
+        j = await r.json();
+      } catch (_) { return null; }
+      // The socket echoes shared_add back to every page, this one included, but
+      // fold it in locally too so the button still works with the socket down.
+      (j.added || []).slice().reverse().forEach(it => {
+        if (!sharedItems.some(i => i.token === it.token)) sharedItems.unshift(it);
+      });
+      renderShared();
+      return j;
+    }
+
+    async function unshareTokens(tokens) {
+      const list = Array.from(new Set(tokens)).filter(Boolean);
+      if (!list.length) return;
+      try {
+        const r = await fetch('/shared', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokens: list }),
+        });
+        if (!r.ok) return;
+      } catch (_) { return; }
+      const drop = new Set(list);
+      sharedItems = sharedItems.filter(i => !drop.has(i.token));
+      renderShared();
+    }
+
+    // The only thing here that destroys data. Everything else is a list edit.
+    async function deleteTokens(tokens) {
+      const list = Array.from(new Set(tokens)).filter(Boolean);
+      if (!list.length) return;
+      const what = list.length === 1 ? 'this file' : `these ${list.length} files`;
+      if (!confirm(
+        `Delete ${what} from the server?\n\n` +
+        'The link stops working for everyone straight away. This cannot be undone.'
+      )) return;
+
+      const gone = [];
+      for (const token of list) {
+        try {
+          const r = await fetch('/f/' + encodeURIComponent(token), { method: 'DELETE' });
+          // A 404 means it was already gone — same end state, count it.
+          if (r.ok || r.status === 404) gone.push(token);
+        } catch (_) {}
+      }
+      if (!gone.length) { alert('Could not delete those files.'); return; }
+
+      const drop = new Set(gone);
+      saveStore(pruneStore().filter(it => !drop.has(tokenOf(it.path))));
+      sharedItems = sharedItems.filter(i => !drop.has(i.token));
+      gone.forEach(t => selected.delete(t));
+      renderShared();
+      refreshStats();
+      if (gone.length < list.length) {
+        alert(`Deleted ${gone.length} of ${list.length}; the rest could not be removed.`);
+      }
+    }
+
+    function flash(btn, text, revert) {
+      if (!btn) return;
+      const original = revert === undefined ? btn.textContent : revert;
+      btn.textContent = text;
+      setTimeout(() => { if (btn.isConnected) btn.textContent = original; }, 1500);
+    }
+
+    // ----- Selection state -----
+    function renderSelectBar() {
+      const n = selected.size;
+      selectBar.hidden = n === 0;
+      document.body.classList.toggle('has-selection', n > 0);
+      if (n) selCount.textContent = `${n} file${n > 1 ? 's' : ''} selected`;
+    }
+
+    // Reflect `selected` onto the DOM without rebuilding it, so ticking a box
+    // never costs a re-render or the scroll position.
+    function syncPicked() {
+      document.querySelectorAll('.hist-item[data-token]').forEach(card => {
+        const on = selected.has(card.dataset.token);
+        card.classList.toggle('picked', on);
+        const box = card.querySelector('.hist-pick input');
+        if (box) box.checked = on;
+      });
+      document.querySelectorAll('.hist-group[data-tokens]').forEach(g => {
+        const box = g.querySelector('.hist-group-label input');
+        if (!box) return;
+        const toks = g.dataset.tokens.split(',').filter(Boolean);
+        const n = toks.filter(t => selected.has(t)).length;
+        box.checked = n > 0 && n === toks.length;
+        box.indeterminate = n > 0 && n < toks.length;
+      });
+      renderSelectBar();
+    }
+
+    // A file that left both lists should leave the selection with it.
+    function pruneSelection() {
+      const live = new Set();
+      document.querySelectorAll('.hist-item[data-token]')
+        .forEach(c => live.add(c.dataset.token));
+      selected.forEach(t => { if (!live.has(t)) selected.delete(t); });
+    }
+
+    selDownloadBtn.onclick = () =>
+      downloadTokens([...selected], `share-it-${selected.size}-files`);
+    selCopyBtn.onclick = async () => {
+      const ok = await copyText([...selected].map(urlForToken).join('\n'));
+      flash(selCopyBtn, ok ? 'Copied' : 'Cmd/Ctrl+C', 'Copy links');
+    };
+    selShareBtn.onclick = async () => {
+      const j = await shareTokens([...selected]);
+      flash(selShareBtn, j ? 'Shared' : 'Failed', 'Share');
+    };
+    selDeleteBtn.onclick = () => deleteTokens([...selected]);
+    selClearBtn.onclick = () => { selected.clear(); syncPicked(); };
+
+    // ----- One card shape for both lists -----
+    // `kind` decides only what × means and which extras the ⋯ row carries.
+    function makeFileCard(it, kind) {
+      const token = it.token;
+      const url = urlForToken(token);
       const ext = fileExt(it.filename);
       const isImage = IMAGE_EXTS.has(ext);
+      const badge = (ext || 'FILE').toUpperCase().slice(0, 5);
+      const isShared = sharedTokens.has(token);
 
       const card = document.createElement('div');
       card.className = 'hist-item';
-      card.dataset.path = it.path;
-      card.dataset.uploadedAt = String(it.uploadedAt);
-      const age = Date.now() - it.uploadedAt;
-      const remain = MAX_AGE_MS - age;
-      const badge = (ext || 'FILE').toUpperCase().slice(0, 5);
-      const thumbHtml = isImage
-        ? `<img class="hist-thumb" alt="" loading="lazy" />`
-        : `<div class="hist-thumb hist-thumb-text" tabindex="0">${escapeHtml(badge)}</div>`;
+      card.dataset.token = token;
+
+      let metaText;
+      if (kind === 'history') {
+        card.dataset.path = '/f/' + token;
+        card.dataset.uploadedAt = String(it.uploadedAt);
+        const age = Date.now() - it.uploadedAt;
+        metaText = `${fmtAge(age)} · ${fmtRemaining(MAX_AGE_MS - age)}`;
+      } else {
+        metaText = `${fmtSize(it.size)} · ${fmtAge(Date.now() - it.when)}`;
+      }
 
       card.innerHTML = `
-        <div class="hist-thumb-wrap">${thumbHtml}</div>
+        <div class="hist-thumb-wrap">
+          <label class="hist-pick" title="Select this file">
+            <input type="checkbox" aria-label="Select ${escapeHtml(it.filename)}" />
+          </label>
+          ${isImage
+            ? '<img class="hist-thumb" alt="" loading="lazy" />'
+            : `<div class="hist-thumb hist-thumb-text" tabindex="0">${escapeHtml(badge)}</div>`}
+        </div>
         <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
-        <div class="hist-meta">${fmtAge(age)} · ${fmtRemaining(remain)}</div>
+        <div class="hist-meta">${metaText}</div>
         <div class="hist-actions">
           <button type="button" class="copy">Copy</button>
           <a class="open" target="_blank" rel="noopener">Open</a>
-          <button type="button" class="more" title="More: download, QR, markdown">⋯</button>
-          <button type="button" class="del" title="Remove from list">×</button>
+          <button type="button" class="more" title="More: download, QR, markdown, share, delete">⋯</button>
+          <button type="button" class="del" title="${kind === 'shared'
+            ? 'Take off the shared list' : 'Remove from this list'}">×</button>
         </div>
         <div class="hist-more" hidden>
           <a class="dl" href="${escapeHtml(url)}?dl=1" download>Download</a>
           <button type="button" class="qr-toggle">QR</button>
           <button type="button" class="copy-md">Copy MD</button>
+          <button type="button" class="share-btn">${isShared ? 'Unshare' : 'Share'}</button>
+          <button type="button" class="destroy danger" title="Delete from the server">Delete</button>
         </div>
         <div class="hist-qr" hidden></div>
       `;
+
       const thumb = card.querySelector('.hist-thumb');
       const openLink = card.querySelector('.open');
-      const copyBtn = card.querySelector('.copy');
-      const delBtn = card.querySelector('.del');
-      const moreBtn = card.querySelector('.more');
       const moreRow = card.querySelector('.hist-more');
 
       openLink.href = url;
-      moreBtn.onclick = () => { moreRow.hidden = !moreRow.hidden; };
+      card.querySelector('.more').onclick = () => { moreRow.hidden = !moreRow.hidden; };
       wireCopyMd(card.querySelector('.copy-md'), url, it.filename);
-      wireQrToggle(card.querySelector('.qr-toggle'), card.querySelector('.hist-qr'), url, 'hist-qr');
+      wireQrToggle(card.querySelector('.qr-toggle'), card.querySelector('.hist-qr'), url);
+
+      const pick = card.querySelector('.hist-pick input');
+      pick.checked = selected.has(token);
+      pick.onchange = () => {
+        if (pick.checked) selected.add(token); else selected.delete(token);
+        syncPicked();
+      };
+
       if (isImage) {
         thumb.src = url;
         thumb.alt = it.filename;
         thumb.tabIndex = 0;
-        thumb.onerror = () => markStale(it.path);
+        // A thumbnail that 404s means the sweeper got there first.
+        if (kind === 'history') thumb.onerror = () => markStale('/f/' + token);
       }
 
       const canPreview = isImage || TEXT_EXTS.has(ext);
-      const openZoom = () => openLightbox(url, it.filename, it.size);
       if (canPreview) {
+        const openZoom = () => openLightbox(url, it.filename, it.size);
         thumb.addEventListener('click', openZoom);
         thumb.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            openZoom();
-          }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openZoom(); }
         });
         openLink.addEventListener('click', (e) => {
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
@@ -1064,80 +1344,165 @@
         thumb.style.cursor = 'default';
       }
 
-      copyBtn.onclick = async (e) => {
+      const copyBtn = card.querySelector('.copy');
+      copyBtn.onclick = async () => {
         const ok = await copyText(url);
-        const b = e.currentTarget;
-        const original = b.textContent;
-        b.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
-        setTimeout(() => { b.textContent = original; }, 1500);
+        flash(copyBtn, ok ? 'Copied' : 'Cmd/Ctrl+C', 'Copy');
       };
-      delBtn.onclick = () => removeFromStore(it.path);
+
+      // Share works at any time now, not only at upload — this is the button
+      // that puts a file you already uploaded onto the list everyone sees.
+      const shareBtn = card.querySelector('.share-btn');
+      shareBtn.onclick = async () => {
+        shareBtn.disabled = true;
+        if (sharedTokens.has(token)) await unshareTokens([token]);
+        else await shareTokens([token]);
+        if (shareBtn.isConnected) shareBtn.disabled = false;
+      };
+
+      card.querySelector('.destroy').onclick = () => deleteTokens([token]);
+      card.querySelector('.del').onclick = () => {
+        if (kind === 'shared') unshareTokens([token]);
+        else removeFromStore('/f/' + token);
+      };
 
       return card;
+    }
+
+    // ----- One group renderer for both lists -----
+    // Consecutive-run grouping missed a batch split by an unrelated entry, so
+    // group by key instead; group order still follows first (newest) sighting.
+    function groupItems(items) {
+      const groups = [];
+      const byKey = new Map();
+      items.forEach(it => {
+        const key = it.batch || `_solo_${it.token}`;
+        let g = byKey.get(key);
+        if (!g) { g = { key, items: [] }; byKey.set(key, g); groups.push(g); }
+        g.items.push(it);
+      });
+      return groups;
+    }
+
+    function renderGroups(container, groups, kind) {
+      container.innerHTML = '';
+      groups.forEach(group => {
+        // Within a group, oldest first: a batch reads in the order it went up.
+        const items = group.items.slice().sort((a, b) => a.when - b.when);
+        const tokens = items.map(it => it.token);
+        const many = items.length > 1;
+        const newest = Math.max(...items.map(it => it.when));
+
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'hist-group';
+        groupDiv.dataset.tokens = tokens.join(',');
+
+        const label = many
+          ? `${items.length} files · ${fmtAge(Date.now() - newest)}`
+          : fmtAge(Date.now() - newest);
+
+        const head = document.createElement('div');
+        head.className = 'hist-group-head';
+        head.innerHTML = `
+          <span class="hist-group-label">
+            ${many ? '<input type="checkbox" title="Select every file in this group" />' : ''}
+            <span>${escapeHtml(label)}</span>
+          </span>
+          <span class="hist-group-actions">
+            ${many ? '<button type="button" class="copy-group">Copy all</button>' : ''}
+            ${many ? '<button type="button" class="zip-group">Download all</button>' : ''}
+            ${many ? '<button type="button" class="more-group" title="More group actions">⋯</button>' : ''}
+            ${kind === 'history'
+              ? `<button type="button" class="del-group" title="Remove ${many ? 'this group' : 'this entry'} from this list only">Close</button>`
+              : `<button type="button" class="unshare-group" title="Take ${many ? 'these' : 'this'} off the shared list">Unshare</button>`}
+          </span>
+          ${many ? `<span class="hist-group-more" hidden>
+            ${kind === 'history' ? '<button type="button" class="share-group">Share all</button>' : ''}
+            <button type="button" class="destroy-group danger">Delete all from server</button>
+          </span>` : ''}
+        `;
+
+        const grid = document.createElement('div');
+        grid.className = 'hist-group-grid';
+        items.forEach(it => grid.appendChild(makeFileCard(it, kind)));
+
+        const groupBox = head.querySelector('.hist-group-label input');
+        if (groupBox) {
+          groupBox.onchange = () => {
+            tokens.forEach(t => groupBox.checked ? selected.add(t) : selected.delete(t));
+            syncPicked();
+          };
+        }
+
+        const moreGroupBtn = head.querySelector('.more-group');
+        const groupMoreRow = head.querySelector('.hist-group-more');
+        if (moreGroupBtn && groupMoreRow) {
+          moreGroupBtn.onclick = () => { groupMoreRow.hidden = !groupMoreRow.hidden; };
+        }
+
+        const copyGroupBtn = head.querySelector('.copy-group');
+        if (copyGroupBtn) {
+          copyGroupBtn.onclick = async () => {
+            const ok = await copyText(tokens.map(urlForToken).join('\n'));
+            flash(copyGroupBtn, ok ? 'Copied' : 'Cmd/Ctrl+C', 'Copy all');
+          };
+        }
+
+        const zipGroupBtn = head.querySelector('.zip-group');
+        if (zipGroupBtn) {
+          zipGroupBtn.onclick = () =>
+            downloadTokens(tokens, `share-it-${items.length}-files`);
+        }
+
+        const shareGroupBtn = head.querySelector('.share-group');
+        if (shareGroupBtn) {
+          shareGroupBtn.onclick = async () => {
+            shareGroupBtn.disabled = true;
+            // One call, so they land as one group on the shared list too.
+            const j = await shareTokens(tokens);
+            if (shareGroupBtn.isConnected) {
+              shareGroupBtn.disabled = false;
+              flash(shareGroupBtn, j ? 'Shared' : 'Failed', 'Share all');
+            }
+          };
+        }
+
+        const destroyGroupBtn = head.querySelector('.destroy-group');
+        if (destroyGroupBtn) destroyGroupBtn.onclick = () => deleteTokens(tokens);
+
+        const unshareGroupBtn = head.querySelector('.unshare-group');
+        if (unshareGroupBtn) unshareGroupBtn.onclick = () => unshareTokens(tokens);
+
+        const delGroupBtn = head.querySelector('.del-group');
+        if (delGroupBtn) {
+          delGroupBtn.onclick = () => {
+            const drop = new Set(tokens);
+            saveStore(pruneStore().filter(it => !drop.has(tokenOf(it.path))));
+            renderHistory();
+          };
+        }
+
+        groupDiv.appendChild(head);
+        groupDiv.appendChild(grid);
+        container.appendChild(groupDiv);
+      });
     }
 
     function renderHistory() {
       const arr = pruneStore();
       historySection.hidden = arr.length === 0;
       historyCount.textContent = arr.length ? `(${arr.length})` : '';
-      historyGrid.innerHTML = '';
-
-      // Group consecutive entries that share a batchId. Older entries with no
-      // batchId render as singleton groups (one card per group).
-      const groups = [];
-      let current = null;
-      arr.forEach(it => {
-        const bid = it.batchId || `_solo_${it.path}`;
-        if (!current || current.batchId !== bid) {
-          current = { batchId: bid, items: [] };
-          groups.push(current);
-        }
-        current.items.push(it);
-      });
-
-      groups.forEach(group => {
-        const groupDiv = document.createElement('div');
-        groupDiv.className = 'hist-group';
-
-        const newest = group.items.reduce((a, b) => a.uploadedAt > b.uploadedAt ? a : b);
-        const headLabel = group.items.length > 1
-          ? `${group.items.length} files · ${fmtAge(Date.now() - newest.uploadedAt)}`
-          : fmtAge(Date.now() - newest.uploadedAt);
-
-        const head = document.createElement('div');
-        head.className = 'hist-group-head';
-        head.innerHTML = `
-          <span>${headLabel}</span>
-          <span class="hist-group-actions">
-            ${group.items.length > 1 ? '<button type="button" class="copy-group">Copy all</button>' : ''}
-            <button type="button" class="del-group" title="Remove ${group.items.length > 1 ? 'group' : 'entry'} from list">Close</button>
-          </span>
-        `;
-
-        const grid = document.createElement('div');
-        grid.className = 'hist-group-grid';
-        group.items.forEach(it => grid.appendChild(makeHistCard(it)));
-
-        const copyGroupBtn = head.querySelector('.copy-group');
-        if (copyGroupBtn) {
-          copyGroupBtn.onclick = async (e) => {
-            const links = group.items.map(it => window.location.origin + it.path).join('\n');
-            const ok = await copyText(links);
-            const b = e.currentTarget;
-            b.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
-            setTimeout(() => { b.textContent = 'Copy all'; }, 1500);
-          };
-        }
-        head.querySelector('.del-group').onclick = () => {
-          const paths = new Set(group.items.map(it => it.path));
-          saveStore(pruneStore().filter(it => !paths.has(it.path)));
-          renderHistory();
-        };
-
-        groupDiv.appendChild(head);
-        groupDiv.appendChild(grid);
-        historyGrid.appendChild(groupDiv);
-      });
+      const items = arr.map(it => ({
+        token: tokenOf(it.path),
+        filename: it.filename,
+        size: it.size,
+        uploadedAt: it.uploadedAt,
+        when: it.uploadedAt,
+        batch: it.batchId || null,
+      }));
+      renderGroups(historyGrid, groupItems(items), 'history');
+      pruneSelection();
+      syncPicked();
     }
 
     clearHistoryBtn.addEventListener('click', () => {
@@ -1194,6 +1559,9 @@
     const padClear = document.getElementById('padClear');
 
     let sharedItems = [];
+    // Tokens currently on the shared list — what a history card's Share/Unshare
+    // button reads to know which way it points.
+    let sharedTokens = new Set();
     let myId = null;
     let padRev = -1;
     let lastLocalEdit = 0;
@@ -1211,69 +1579,20 @@
       return mb >= 0.01 ? `${mb.toFixed(2)} MB` : `${Math.max(1, Math.round((bytes || 0) / 1024))} KB`;
     }
 
-    function makeSharedCard(it) {
-      const url = window.location.origin + '/f/' + it.token;
-      const ext = fileExt(it.filename);
-      const isImage = IMAGE_EXTS.has(ext);
-      const badge = (ext || 'FILE').toUpperCase().slice(0, 5);
-
-      const card = document.createElement('div');
-      card.className = 'hist-item';
-      card.dataset.token = it.token;
-      card.innerHTML = `
-        <div class="hist-thumb-wrap">${isImage
-          ? '<img class="hist-thumb" alt="" loading="lazy" />'
-          : `<div class="hist-thumb hist-thumb-text" tabindex="0">${escapeHtml(badge)}</div>`}</div>
-        <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
-        <div class="hist-meta">${fmtSize(it.size)} · ${fmtAge(Date.now() - (it.at || 0) * 1000)}</div>
-        <div class="hist-actions">
-          <button type="button" class="copy">Copy</button>
-          <a class="open" target="_blank" rel="noopener">Open</a>
-          <button type="button" class="del" title="Take off the shared list">×</button>
-        </div>
-      `;
-      const thumb = card.querySelector('.hist-thumb');
-      card.querySelector('.open').href = url;
-      if (isImage) { thumb.src = url; thumb.alt = it.filename; }
-
-      const canPreview = isImage || TEXT_EXTS.has(ext);
-      if (canPreview) {
-        const openZoom = () => openLightbox(url, it.filename, it.size);
-        thumb.addEventListener('click', openZoom);
-        card.querySelector('.open').addEventListener('click', (e) => {
-          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-          e.preventDefault();
-          openZoom();
-        });
-      } else {
-        thumb.style.cursor = 'default';
-      }
-
-      const copyBtn = card.querySelector('.copy');
-      copyBtn.onclick = async () => {
-        const ok = await copyText(url);
-        copyBtn.textContent = ok ? 'Copied' : 'Cmd/Ctrl+C';
-        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
-      };
-      card.querySelector('.del').onclick = async () => {
-        try {
-          const r = await fetch('/shared/' + encodeURIComponent(it.token), { method: 'DELETE' });
-          // The broadcast updates every other page; drop it here too so the
-          // click still works when the socket is down.
-          if (r.ok) {
-            sharedItems = sharedItems.filter(i => i.token !== it.token);
-            renderShared();
-          }
-        } catch (_) {}
-      };
-      return card;
-    }
-
     function renderShared() {
+      sharedTokens = new Set(sharedItems.map(i => i.token));
       sharedSection.hidden = sharedItems.length === 0;
       sharedCount.textContent = sharedItems.length ? `(${sharedItems.length})` : '';
-      sharedGrid.innerHTML = '';
-      sharedItems.forEach(it => sharedGrid.appendChild(makeSharedCard(it)));
+      const items = sharedItems.map(it => ({
+        token: it.token,
+        filename: it.filename,
+        size: it.size,
+        when: (it.at || 0) * 1000,
+        batch: it.batch || null,
+      }));
+      renderGroups(sharedGrid, groupItems(items), 'shared');
+      // History cards carry a Share/Unshare state, so they follow this list.
+      renderHistory();
     }
 
     // Replace the pad's text without yanking the caret out from under a typist.

@@ -5,6 +5,7 @@ import re
 import secrets
 import shutil
 import time
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
@@ -16,6 +17,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     UploadFile,
     WebSocket,
@@ -27,6 +29,7 @@ from fastapi.responses import (
     JSONResponse,
     PlainTextResponse,
     Response,
+    StreamingResponse,
 )
 from fastapi.templating import Jinja2Templates
 
@@ -48,7 +51,30 @@ SHARED_MAX_ITEMS = int(cfg.get("shared_max_items", 500))
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+BATCH_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 FAVICON_PATH = Path(__file__).parent / "favicon.svg"
+
+# Bulk download. The tokens ride in the query string so a plain link can start
+# the save, which makes the request line — not storage — the binding limit.
+MAX_ZIP_FILES = 200
+ZIP_CHUNK = 256 * 1024
+
+# Deflate earns its CPU only on payloads that are not already compressed, so
+# it is opt-in by extension: text, logs, code, and the uncompressed image and
+# audio formats. Everything else — photos, video, PDFs, office files, archives,
+# and anything unrecognised — is stored verbatim, which keeps a big zip bound
+# by the network rather than by this box's CPU.
+ZIP_DEFLATE_EXTS = {
+    "txt", "md", "markdown", "rst", "log", "csv", "tsv",
+    "json", "jsonl", "ndjson", "xml", "yaml", "yml", "toml", "ini",
+    "cfg", "conf", "properties", "html", "htm", "css", "svg",
+    "js", "mjs", "cjs", "ts", "tsx", "jsx", "vue",
+    "py", "rb", "go", "rs", "java", "kt", "swift", "c", "h",
+    "cpp", "cc", "hpp", "cs", "php", "pl", "lua", "r",
+    "sh", "bash", "zsh", "fish", "sql", "diff", "patch",
+    "srt", "vtt", "ics", "tex", "bib",
+    "bmp", "tif", "tiff", "wav", "aif", "aiff", "ppm", "pgm", "dib",
+} | TEXT_EXTS
 
 # State files live at the top level of DATA_DIR. The sweeper only walks
 # directories (one per upload), so these are never swept away with the files.
@@ -145,6 +171,57 @@ def _prune_shared(items: list[dict]) -> tuple[list[dict], list[str]]:
         else:
             gone.append(token)
     return kept, gone
+
+
+def _token_file(token: str) -> Path | None:
+    """The single stored file behind a token, or None if it is gone."""
+    if not TOKEN_RE.match(token or ""):
+        return None
+    folder = DATA_DIR / token
+    if not folder.is_dir():
+        return None
+    files = sorted(p for p in folder.iterdir() if p.is_file())
+    return files[0] if files else None
+
+
+def _clean_batch(batch: str | None) -> str | None:
+    """A batch id ties one upload's files together, so a group stays a group."""
+    b = (batch or "").strip()
+    return b if BATCH_RE.match(b) else None
+
+
+async def _add_shared(new_items: list[dict]) -> list[dict]:
+    """Put entries on the shared list, newest first, and announce them.
+
+    Shared by both paths onto the list: the upload checkbox, and the Share
+    button on a file that was uploaded earlier.
+    """
+    fresh: list[dict] = []
+    async with _shared_lock:
+        items, _ = _prune_shared(_load_shared())
+        have = {i.get("token") for i in items}
+        fresh = [i for i in new_items if i["token"] not in have]
+        if fresh:
+            items = fresh + items
+            del items[SHARED_MAX_ITEMS:]
+            _write_shared(items)
+    for it in fresh:
+        await hub.broadcast({"type": "shared_add", "item": it})
+    return fresh
+
+
+async def _drop_shared(tokens: list[str]) -> list[str]:
+    """Take entries off the shared list. Says which ones were actually on it."""
+    drop = set(tokens)
+    async with _shared_lock:
+        items = _load_shared()
+        kept = [i for i in items if i.get("token") not in drop]
+        removed = [i.get("token") for i in items if i.get("token") in drop]
+        if removed:
+            _write_shared(kept)
+    for token in removed:
+        await hub.broadcast({"type": "shared_del", "token": token})
+    return removed
 
 
 async def cleanup_loop():
@@ -316,6 +393,7 @@ async def upload(
     request: Request,
     file: UploadFile = File(...),
     shared: str | None = Form(None),
+    batch: str | None = Form(None),
 ):
     filename = Path(file.filename or "file").name or "file"
     ext = Path(filename).suffix.lower().lstrip(".")
@@ -346,12 +424,12 @@ async def upload(
     is_shared = str(shared or "").lower() in {"1", "true", "on", "yes"}
     if is_shared:
         item = {"token": token, "filename": filename, "size": written, "at": time.time()}
-        async with _shared_lock:
-            items, _ = _prune_shared(_load_shared())
-            items.insert(0, item)
-            del items[SHARED_MAX_ITEMS:]
-            _write_shared(items)
-        await hub.broadcast({"type": "shared_add", "item": item})
+        # The browser sends one request per file but stamps them all with the
+        # same batch, so a multi-file upload lands as one group on the list.
+        group = _clean_batch(batch)
+        if group:
+            item["batch"] = group
+        await _add_shared([item])
 
     # CLI clients (curl with `Accept: text/plain`) get just the full URL back,
     # so a shell helper needs no JSON parser. Browsers get JSON as before.
@@ -374,18 +452,83 @@ async def shared_list():
     return {"items": items}
 
 
+@app.post("/shared")
+async def shared_put(request: Request):
+    """Put files that are ALREADY uploaded onto the shared list.
+
+    Body: `{"tokens": ["a", "b"], "batch": "<id>"}`, or `{"token": "a"}` for
+    one. This is what the Share button on an existing card calls, so anything
+    in your history can join the list everyone on this page sees — you no
+    longer have to have ticked the box before uploading.
+    """
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise HTTPException(400, "expected a JSON object")
+
+    raw = body.get("tokens")
+    if raw is None:
+        raw = [body["token"]] if body.get("token") else []
+    if not isinstance(raw, list):
+        raise HTTPException(400, "'tokens' must be a list")
+    tokens = [t for t in dict.fromkeys(raw) if isinstance(t, str)][:SHARED_MAX_ITEMS]
+    if not tokens:
+        raise HTTPException(400, "no tokens given")
+
+    # Sharing several at once makes them a group, exactly like an upload batch.
+    group = _clean_batch(body.get("batch"))
+    if not group and len(tokens) > 1:
+        group = secrets.token_urlsafe(6)
+
+    now = time.time()
+    new_items, missing = [], []
+    for i, token in enumerate(tokens):
+        f = _token_file(token)
+        if f is None:
+            missing.append(token)
+            continue
+        # A hair apart so a group keeps the order they were picked in.
+        item = {"token": token, "filename": f.name, "size": f.stat().st_size,
+                "at": now + i * 0.001}
+        if group:
+            item["batch"] = group
+        new_items.append(item)
+
+    if not new_items:
+        raise HTTPException(404, "none of those files are still here")
+    added = await _add_shared(new_items)
+    return {"added": added, "missing": missing, "batch": group}
+
+
+@app.delete("/shared")
+async def shared_remove_many(request: Request):
+    """Take several entries off the shared list at once (a whole group).
+
+    Body: `{"tokens": ["a", "b"]}`. The files themselves stay until swept —
+    use `DELETE /f/{token}` to actually delete them.
+    """
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict) or not isinstance(body.get("tokens"), list):
+        raise HTTPException(400, "expected {\"tokens\": [...]}")
+    tokens = [t for t in body["tokens"] if isinstance(t, str) and TOKEN_RE.match(t)]
+    if not tokens:
+        raise HTTPException(400, "no tokens given")
+    removed = await _drop_shared(tokens)
+    return {"removed": removed}
+
+
 @app.delete("/shared/{token}")
 async def shared_remove(token: str):
     """Take an entry off the shared list. The file itself stays until swept."""
     if not TOKEN_RE.match(token):
         raise HTTPException(404)
-    async with _shared_lock:
-        items = _load_shared()
-        kept = [i for i in items if i.get("token") != token]
-        if len(kept) == len(items):
-            raise HTTPException(404, "not on the shared list")
-        _write_shared(kept)
-    await hub.broadcast({"type": "shared_del", "token": token})
+    if not await _drop_shared([token]):
+        raise HTTPException(404, "not on the shared list")
     return {"ok": True}
 
 
@@ -478,16 +621,154 @@ async def ws(websocket: WebSocket):
 
 @app.get("/f/{token}")
 def download(token: str, dl: bool = False):
+    f = _token_file(token)
+    if f is None:
+        raise HTTPException(404)
+    # `?dl=1` forces a save dialog; default stays inline so previews/embeds work.
+    disp = "attachment" if dl else "inline"
+    disposition = f"{disp}; filename*=UTF-8''{quote(f.name)}"
+    return FileResponse(f, headers={"Content-Disposition": disposition})
+
+
+@app.delete("/f/{token}")
+async def delete_file(token: str):
+    """Delete an upload for real, now, instead of waiting for the sweeper.
+
+    This is what "Delete" on a card or a group calls. It also takes the entry
+    off the shared list, so every open page stops offering a dead link.
+    """
     if not TOKEN_RE.match(token):
         raise HTTPException(404)
     folder = DATA_DIR / token
     if not folder.is_dir():
         raise HTTPException(404)
-    files = [p for p in folder.iterdir() if p.is_file()]
-    if not files:
-        raise HTTPException(404)
-    f = files[0]
-    # `?dl=1` forces a save dialog; default stays inline so previews/embeds work.
-    disp = "attachment" if dl else "inline"
-    disposition = f"{disp}; filename*=UTF-8''{quote(f.name)}"
-    return FileResponse(f, headers={"Content-Disposition": disposition})
+    shutil.rmtree(folder, ignore_errors=True)
+    if folder.exists():
+        raise HTTPException(500, "could not delete that file")
+    await _drop_shared([token])
+    return {"ok": True, "token": token}
+
+
+# ---------------------------------------------------------------------------
+# Bulk download: several uploads, one zip, nothing staged on disk.
+# ---------------------------------------------------------------------------
+
+
+class _ZipSink:
+    """A write-only sink zipfile can build into while we stream the result.
+
+    It has no seek/tell, which zipfile detects and answers by writing data
+    descriptors instead of backfilling headers. That is what lets a multi-GB
+    selection stream straight out of a small process.
+    """
+
+    def __init__(self):
+        self.buf = bytearray()
+
+    def write(self, data) -> int:
+        self.buf += data
+        return len(data)
+
+    def flush(self):
+        pass
+
+    def drain(self) -> bytes:
+        chunk = bytes(self.buf)
+        del self.buf[:]
+        return chunk
+
+
+def _unique_arcname(name: str, seen: set[str]) -> str:
+    """Two uploads can share a filename; inside one archive they cannot."""
+    if name not in seen:
+        seen.add(name)
+        return name
+    stem, suffix = Path(name).stem, Path(name).suffix
+    n = 2
+    while f"{stem} ({n}){suffix}" in seen:
+        n += 1
+    out = f"{stem} ({n}){suffix}"
+    seen.add(out)
+    return out
+
+
+def _clean_zip_name(name: str | None) -> str | None:
+    """Reduce a caller-supplied archive name to something safe for a header."""
+    base = Path(str(name or "")).name
+    base = re.sub(r"\.zip$", "", base, flags=re.IGNORECASE)
+    base = re.sub(r"[^A-Za-z0-9 ._-]+", "", base).strip(" .")
+    return base[:60] or None
+
+
+def _zip_stream(entries: list[tuple[str, Path]]):
+    """Yield the archive as it is built, a chunk at a time."""
+    sink = _ZipSink()
+    with zipfile.ZipFile(sink, "w", allowZip64=True) as zf:
+        for arcname, path in entries:
+            # Opened before the archive entry is: a file swept out from under
+            # us gets skipped, rather than wedging the half-written entry.
+            try:
+                stat = path.stat()
+                src = path.open("rb")
+            except OSError as e:
+                print(f"[zip] skipped {arcname}: {e}", flush=True)
+                continue
+            info = zipfile.ZipInfo(
+                arcname, date_time=time.localtime(stat.st_mtime)[:6]
+            )
+            info.compress_type = (
+                zipfile.ZIP_DEFLATED
+                if path.suffix.lower().lstrip(".") in ZIP_DEFLATE_EXTS
+                else zipfile.ZIP_STORED
+            )
+            info.external_attr = 0o644 << 16
+            with src, zf.open(info, "w") as dest:
+                while chunk := src.read(ZIP_CHUNK):
+                    dest.write(chunk)
+                    if len(sink.buf) >= ZIP_CHUNK:
+                        yield sink.drain()
+            if sink.buf:
+                yield sink.drain()
+    if sink.buf:
+        yield sink.drain()
+
+
+@app.get("/zip")
+def zip_download(
+    t: list[str] = Query(default=[]),
+    name: str | None = None,
+):
+    """Several uploads as one download: `/zip?t=<token>&t=<token>`.
+
+    Backs both "Download all" on a group and "Download selected". The total
+    size is unknown until the last byte, so this streams without a
+    Content-Length rather than buffering the archive to size it.
+    """
+    tokens = [x for x in dict.fromkeys(t) if TOKEN_RE.match(x)]
+    if not tokens:
+        raise HTTPException(400, "no file tokens given")
+    if len(tokens) > MAX_ZIP_FILES:
+        raise HTTPException(413, f"at most {MAX_ZIP_FILES} files per zip")
+
+    seen: set[str] = set()
+    entries: list[tuple[str, Path]] = []
+    for token in tokens:
+        f = _token_file(token)
+        if f is not None:
+            entries.append((_unique_arcname(f.name, seen), f))
+    if not entries:
+        raise HTTPException(404, "none of those files are still here")
+
+    base = _clean_zip_name(name) or (
+        f"share-it-{len(entries)}-files-{time.strftime('%Y%m%d-%H%M%S')}"
+    )
+    filename = f"{base}.zip"
+    return StreamingResponse(
+        _zip_stream(entries),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            "Cache-Control": "no-store",
+            "X-Zip-Files": str(len(entries)),
+        },
+    )
