@@ -40,6 +40,24 @@ There's also a **Text tab**: paste a code snippet, a log, or any block of text a
 
 ![The Text tab: paste a log or snippet and share it as a link](docs/text-tab.png)
 
+### Two ways to skip the link entirely
+
+Sometimes you don't want to hand a link over at all — you just want the thing to *be there* on the other machine.
+
+**Tick "Show it to everyone on this page"** before uploading, and the file gets listed right on the page for anyone who opens the URL. No link to send: open share-it on your phone and your laptop's upload is already sitting there. Leave it unticked (the default) and nothing changes — only you get the link.
+
+**Or use the Live tab** — a shared clipboard. Type or paste into it and every other browser on that URL sees the text appear as you type. Two machines, one scratch buffer, no send button. It works from a terminal too:
+
+```bash
+# Read whatever someone typed in the browser
+curl -s http://localhost:3050/pad
+
+# Push command output into the browser's Live tab
+kubectl logs my-pod | curl -sf --data-binary @- http://localhost:3050/pad
+```
+
+Both are last-write-wins and open to anyone who can reach the page. That's the trade — see [Security](#security).
+
 ## Is it for you?
 
 It's a good fit if:
@@ -74,7 +92,19 @@ kubectl logs my-pod | share -
 
 **Copy as Markdown** — **Copy MD** in the same `⋯` menu gives you `![](url)` for images or `[name](url)` otherwise. Paste into docs, issues, or an AI's context window.
 
-**Recent uploads** — your latest drops stay listed below the drop zone with thumbnails and a countdown to expiry, so you can re-copy an earlier link without uploading again.
+**Recent uploads, kept in groups** — your latest drops stay listed below the drop zone with thumbnails and a countdown to expiry, so you can re-copy an earlier link without uploading again. Files that went up together stay together as one group, in the order you picked them.
+
+**Bulk download** — the reverse of a bulk upload. **Download all** on a group hands you the whole batch as one zip. The archive is built and streamed in one pass, so a multi-gigabyte selection costs the server a few megabytes of memory, not the size of the zip. Already-compressed files (photos, video, PDFs) are stored as-is; text and logs are deflated, so a folder of logs comes back a fraction of its size.
+
+**Pick and choose** — every card has a checkbox. Tick any mix across both lists and the bar at the bottom will zip them, copy all their links, share them, or delete them in one go. The group checkbox takes the whole batch. The same file ticked in two places counts once.
+
+**Share after the fact** — you no longer have to decide before uploading. **⋯ → Share** on anything in your history puts it on the shared list right then, and it appears on everyone else's page live. The button flips to **Unshare** to take it back off. **Share all** does a whole group at once, and it lands as one group for everyone else too.
+
+**A shared list, opt-in** — tick the checkbox and an upload is listed for everyone on the URL instead of just you. New entries appear on other people's pages live, with no refresh. The shared list groups batches exactly like your own does, with the same bulk actions.
+
+**Delete for real** — everything else here is a list edit; **Delete** is the one thing that destroys data. **⋯ → Delete** on a card, or **Delete all from server** on a group, removes the files now instead of waiting out the expiry, and the links stop working for everyone immediately. It asks first, and it can't be undone. **Close** and the **×** still only tidy your own list.
+
+**Live clipboard** — the **Live** tab is one text buffer shared by every browser on the URL, synced as you type. Readable and writable from the shell via `GET`/`POST /pad`, so a terminal and a phone can share a scratch buffer.
 
 **Auto-expiry** — files clean themselves up on a schedule. No manual housekeeping.
 
@@ -121,6 +151,8 @@ Edit `config.yaml` for app behaviour, then `make restart`:
 | `max_upload_mb_text` | `2` | Smaller cap for `.txt` / `.md` uploads |
 | `cleanup_interval_sec` | `3600` | How often the sweeper runs |
 | `blocked_extensions` | (long list) | Extensions rejected at upload (executables, installers) |
+| `pad_max_kb` | `128` | Size cap for the Live tab's shared text |
+| `shared_max_items` | `500` | How many entries the shared list holds before the oldest drop off |
 
 The host-port binding lives in a gitignored `.env`. Copy the template to change `BIND_ADDR` or `HOST_PORT`:
 
@@ -154,6 +186,22 @@ The script auto-detects `pbcopy` (macOS), `wl-copy` (Wayland), or `xclip` (X11) 
 
 ```bash
 curl -sf -H "Accept: text/plain" -F "file=@report.pdf" http://localhost:3050/upload
+
+# Add `shared=1` to also put it on the page's shared list
+curl -sf -F "file=@report.pdf" -F "shared=1" http://localhost:3050/upload
+
+# Add a matching `batch=<id>` across several uploads to keep them one group
+curl -sf -F "file=@a.png" -F "shared=1" -F "batch=friday" http://localhost:3050/upload
+
+# Pull several files back as one zip
+curl -sf -o batch.zip "http://localhost:3050/zip?t=TOKEN1&t=TOKEN2"
+
+# Share files you uploaded earlier
+curl -sf -X POST -H 'Content-Type: application/json' \
+  -d '{"tokens":["TOKEN1","TOKEN2"]}' http://localhost:3050/shared
+
+# Delete one for good, without waiting for the sweeper
+curl -sf -X DELETE http://localhost:3050/f/TOKEN1
 ```
 
 Other endpoints:
@@ -162,6 +210,15 @@ Other endpoints:
 |----------|--------------|
 | `GET /f/<token>` | Serve the file inline |
 | `GET /f/<token>?dl=1` | Force a save dialog |
+| `DELETE /f/<token>` | Delete the upload for good, now (also drops it from the shared list) |
+| `GET /zip?t=<token>&t=<token>` | Stream several uploads back as one zip (up to 200; add `&name=` to name it) |
+| `GET /shared` | The shared list, as JSON |
+| `POST /shared` | Put already-uploaded files on the shared list — `{"tokens": [...]}`, or `{"token": "..."}` |
+| `DELETE /shared` | Take several entries off the shared list — `{"tokens": [...]}` (the files stay) |
+| `DELETE /shared/<token>` | Take one entry off the shared list (the file stays) |
+| `GET /pad` | Live-tab text as JSON, or raw with `Accept: text/plain` |
+| `POST /pad` | Replace the live text from the request body |
+| `GET /ws` | WebSocket carrying live pad + shared-list updates |
 | `GET /healthz` | Liveness check (also returns version) |
 | `GET /stats` | File count, total bytes, next expiry |
 | `GET /qr?data=<url>` | SVG QR code for any URL |
@@ -171,14 +228,20 @@ Other endpoints:
 
 There is no authentication. Anyone who can reach the port can download files by link. Run it on a network you trust (Tailscale, WireGuard, a LAN) or put it behind your own auth proxy. Do not bind to `0.0.0.0` on a host with a public IP.
 
+The shared list, the live pad, and deletion widen that, so they're worth stating plainly. **Anyone who can open the page can read the shared list, read the pad, overwrite the pad, and delete any file whose token they have.** Uploads stay private-by-default — a file is only listed if you tick the box — but nothing here has an owner, a password, or an undo. Deletion is the sharpest edge: `DELETE /f/<token>` needs only the token, which is the same secret as the download link, so a link you hand out is also a link that can destroy the file. That's the intended trade for a drop zone on a network you already trust. Don't run it anywhere you wouldn't accept a stranger emptying the folder, and don't put anything on the shared list or the pad that you wouldn't hand to everyone who can reach the port.
+
+Deletion is deliberately not undoable and there is no recycle bin. The UI confirms first; the API does not.
+
+If your reverse proxy terminates the connection, it needs to pass WebSocket upgrades through for `/ws` (`tailscale serve` does this already). Without it the page still works — the shared list and pad load over plain HTTP — it just stops updating live.
+
 ## Versioning
 
 The current version is in `VERSION` (SemVer). It appears in the page footer and in `/healthz`.
 
 ```bash
-make bump-patch   # 0.2.3 -> 0.2.4  (bug fixes)
-make bump-minor   # 0.2.3 -> 0.3.0  (new features)
-make bump-major   # 0.2.3 -> 1.0.0  (breaking changes)
+make bump-patch   # 0.3.0 -> 0.3.1  (bug fixes)
+make bump-minor   # 0.3.0 -> 0.4.0  (new features)
+make bump-major   # 0.3.0 -> 1.0.0  (breaking changes)
 make up           # rebuild + redeploy
 make version      # print current version
 ```
