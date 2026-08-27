@@ -535,7 +535,7 @@
         const names = files.length <= 3
           ? files.map(f => f.name).join(', ')
           : `${files[0].name}, ${files[1].name}, +${files.length - 2} more`;
-        picked.textContent = `${files.length} file${files.length > 1 ? 's' : ''}: ${names} (${(total/1024/1024).toFixed(2)} MB total)`;
+        picked.textContent = `${files.length} file${files.length > 1 ? 's' : ''}: ${names} (${fmtSize(total)} total)`;
         dropTitle.textContent = 'Click to choose different files';
         btn.disabled = false;
         clearBtn.hidden = false;
@@ -692,7 +692,7 @@
             slot.classList.remove('pending');
             slot.innerHTML = `
               <div class="r-row">
-                <span class="r-name" title="${escapeHtml(j.filename)}"><strong>${escapeHtml(j.filename)}</strong><span class="r-size">${(j.size/1024/1024).toFixed(2)} MB</span></span>
+                <span class="r-name" title="${escapeHtml(j.filename)}"><strong>${escapeHtml(j.filename)}</strong><span class="r-size">${fmtSize(j.size)}</span></span>
                 <span class="r-acts">
                   <button type="button" class="ghost copy">Copy</button>
                   <a class="ghost open" target="_blank" rel="noopener">Open</a>
@@ -799,7 +799,7 @@
         div.innerHTML = `
           <div><strong>${escapeHtml(file.name)}</strong> uploading…</div>
           <progress value="0" max="100" style="margin-top:.4rem"></progress>
-          <div class="meta">${(file.size/1024/1024).toFixed(2)} MB</div>
+          <div class="meta">${fmtSize(file.size)}</div>
         `;
         out.appendChild(div);
         return div;
@@ -1008,7 +1008,7 @@
     async function openLightbox(url, filename, sizeBytes) {
       lightboxCaption.innerHTML =
         `<div>${escapeHtml(filename || '')}</div>` +
-        (sizeBytes ? `<div class="sub">${(sizeBytes/1024/1024).toFixed(2)} MB</div>` : '');
+        (sizeBytes ? `<div class="sub">${fmtSize(sizeBytes)}</div>` : '');
       lightbox.hidden = false;
       document.body.style.overflow = 'hidden';
       lightboxClose.focus();
@@ -1538,8 +1538,7 @@
         if (!r.ok) return;
         const s = await r.json();
         if (!s.files) { statsLine.textContent = ''; statsSep.hidden = true; return; }
-        const mb = (s.bytes / 1024 / 1024).toFixed(1);
-        let txt = `${s.files} file${s.files > 1 ? 's' : ''} · ${mb} MB stored on server`;
+        let txt = `${s.files} file${s.files > 1 ? 's' : ''} · ${fmtSize(s.bytes)} stored on server`;
         if (s.oldest_expires) {
           const left = s.oldest_expires * 1000 - Date.now();
           if (left > 0) txt += ` · oldest expires in ${fmtRemaining(left).replace(' left', '')}`;
@@ -1575,8 +1574,11 @@
     }
 
     function fmtSize(bytes) {
-      const mb = (bytes || 0) / 1024 / 1024;
-      return mb >= 0.01 ? `${mb.toFixed(2)} MB` : `${Math.max(1, Math.round((bytes || 0) / 1024))} KB`;
+      const b = bytes || 0;
+      if (b < 1024) return `${b} B`;
+      const kb = b / 1024;
+      if (kb < 1024) return `${Math.round(kb)} KB`;
+      return `${(kb / 1024).toFixed(2)} MB`;
     }
 
     function renderShared() {
