@@ -290,6 +290,18 @@
     .hist-actions .del:hover, .hist-actions .more:hover { opacity: 1; }
     .hist-more { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem;
                  align-items: stretch; }
+    .hist-more select.keep {
+      flex: 1 1 100%; padding: 0.2rem 0.3rem; font-size: 0.72rem;
+      border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
+      background: transparent; color: inherit; cursor: pointer;
+    }
+    .expiry-row { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.75rem; font-size: 0.9rem; }
+    .expiry-row select { padding: 0.2rem 0.4rem; font-size: 0.9rem; border-radius: 4px;
+                         border: 1px solid #888; background: transparent; color: inherit; }
+    /* show_all_files: every file is on the list by definition, so the
+       controls that put a file on it or take it off would only confuse. */
+    .show-all .share-btn, .show-all .share-group, .show-all .unshare-group, .show-all #selShare,
+    .show-all #sharedGrid .hist-actions .del { display: none; }
     .hist-more button, .hist-more a {
       flex: 1 1 42%; padding: 0.2rem 0.3rem; font-size: 0.72rem;
       border: 1px solid rgba(127,127,127,0.5); border-radius: 3px;
@@ -392,11 +404,11 @@
     #lightboxClose:hover { background: rgba(255,255,255,0.2); }
   </style>
 </head>
-<body>
+<body{% if show_all_files %} class="show-all"{% endif %}>
   <h1><img src="/favicon.svg" alt="" />{{ app_name }}<span class="host" id="hostName"></span></h1>
   <div class="warn">
     <strong>Warning:</strong> anyone with the link can download these files.
-    Files are deleted after {{ max_age_days }} day(s).
+    Files are deleted after {{ max_age_days }} day(s) unless you pick another time.
     {% if text_exts %}
       Up to {{ max_upload_mb }} MB each, {{ max_upload_mb_text }} MB for text ({{ text_exts | join(', ') }}).
     {% else %}
@@ -411,7 +423,12 @@
     <button type="button" class="tab" id="tabLive" role="tab" aria-selected="false">Live</button>
   </div>
 
-  <div class="share-toggle" id="shareToggleRow">
+  <div class="expiry-row" id="expiryRow">
+    <label for="expirySelect">Keep files for</label>
+    <select id="expirySelect"></select>
+  </div>
+
+  <div class="share-toggle" id="shareToggleRow"{% if show_all_files %} hidden{% endif %}>
     <input type="checkbox" id="shareToggle" />
     <label for="shareToggle">
       Show it to everyone on this page
@@ -481,12 +498,14 @@
 
   <section class="shared" id="sharedSection" hidden>
     <div class="history-head">
-      <h2>Shared on this page<span class="count" id="sharedCount"></span></h2>
+      <h2>{% if show_all_files %}All files on this server{% else %}Shared on this page{% endif %}<span class="count" id="sharedCount"></span></h2>
     </div>
     <div class="history-sub">
-      Everyone who opens this URL sees these, and new ones appear live.
+      {% if show_all_files %}This instance shows every uploaded file to everyone who opens it, and new
+      ones appear live.{% else %}Everyone who opens this URL sees these, and new ones appear live.
       Removing one only takes it off this list — the link keeps working until it
-      expires. <strong>Delete</strong> removes the file from the server for good.
+      expires.{% endif %} <strong>Delete</strong> removes the file from the server for good.
+      <strong>⋯ &rarr; Keep for</strong> changes how long a file stays.
     </div>
     <div class="history-grid" id="sharedGrid"></div>
   </section>
@@ -629,7 +648,8 @@
       });
       // The share checkbox governs uploads, so it has no meaning on the pad —
       // the pad is shared with everyone by definition.
-      shareToggleRow.hidden = which === 'live';
+      shareToggleRow.hidden = SHOW_ALL || which === 'live';
+      document.getElementById('expiryRow').hidden = which === 'live';
       if (which === 'text') snippetText.focus();
       if (which === 'live') padText.focus();
     }
@@ -687,6 +707,7 @@
         // One request per file, one batch id across them: the server uses it to
         // keep a multi-file upload together on the shared list.
         if (batchId) fd.append('batch', batchId);
+        fd.append('expires_hours', expirySelect.value);
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/upload');
         xhr.upload.onprogress = (ev) => {
@@ -701,7 +722,9 @@
             const j = JSON.parse(xhr.responseText);
             const url = window.location.origin + j.path;
             uploadedUrls.push(url);
-            addToStore({ path: j.path, filename: j.filename, size: j.size, uploadedAt: Date.now(), batchId });
+            if (j.expires) expiresByToken.set(tokenOf(j.path), j.expires * 1000);
+            addToStore({ path: j.path, filename: j.filename, size: j.size, uploadedAt: Date.now(),
+                         expiresAt: j.expires ? j.expires * 1000 : undefined, batchId });
             slot.classList.remove('pending');
             slot.innerHTML = `
               <div class="r-row">
@@ -858,6 +881,39 @@
     const STORAGE_KEY = 'shareit.history.v1';
     const MAX_AGE_DAYS = {{ max_age_days }};
     const MAX_AGE_MS = MAX_AGE_DAYS * 86400 * 1000;
+    const SHOW_ALL = {{ 'true' if show_all_files else 'false' }};
+    const EXPIRY_CHOICES_HOURS = {{ expiry_choices_hours | tojson }};
+
+    // Each file can have its own expiry. The server is the source of truth;
+    // this map holds what it last told us, keyed by file token.
+    const expiresByToken = new Map();
+    function fmtHours(h) {
+      if (h < 24) return h === 1 ? '1 hour' : `${+h.toFixed(1)} hours`;
+      const d = h / 24;
+      return d === 1 ? '1 day' : `${+d.toFixed(1)} days`;
+    }
+    function expiryOptions(select, selectedHours) {
+      EXPIRY_CHOICES_HOURS.forEach(h => {
+        const o = document.createElement('option');
+        o.value = String(h);
+        o.textContent = fmtHours(h);
+        if (h === selectedHours) o.selected = true;
+        select.appendChild(o);
+      });
+    }
+    const expirySelect = document.getElementById('expirySelect');
+    expiryOptions(expirySelect, MAX_AGE_DAYS * 24);
+    try {
+      const saved = localStorage.getItem('share-it-expiry-hours');
+      if (saved && EXPIRY_CHOICES_HOURS.includes(+saved)) expirySelect.value = saved;
+    } catch (_) {}
+    expirySelect.addEventListener('change', () => {
+      try { localStorage.setItem('share-it-expiry-hours', expirySelect.value); } catch (_) {}
+    });
+    // When an entry in this browser's history is due to go.
+    function historyExpiry(it) {
+      return expiresByToken.get(tokenOf(it.path)) || it.expiresAt || (it.uploadedAt + MAX_AGE_MS);
+    }
 
     const TEXT_EXTS = new Set({{ text_exts | tojson }});
     const IMAGE_EXTS = new Set({{ image_exts | tojson }});
@@ -979,7 +1035,7 @@
     function pruneStore() {
       const now = Date.now();
       const arr = loadStore().filter(it =>
-        it && it.path && typeof it.uploadedAt === 'number' && (now - it.uploadedAt < MAX_AGE_MS)
+        it && it.path && typeof it.uploadedAt === 'number' && historyExpiry(it) > now
       );
       saveStore(arr);
       return arr;
@@ -1265,6 +1321,31 @@
     selDeleteBtn.onclick = () => deleteTokens([...selected]);
     selClearBtn.onclick = () => { selected.clear(); syncPicked(); };
 
+    // "2h ago · 1d 4h left" on a history card, "12 KB · 2h ago · 1d 4h left"
+    // on a shared one. The time left is skipped when we do not know it.
+    function cardMeta(card, size) {
+      const now = Date.now();
+      const parts = [];
+      if (card.dataset.kind === 'shared' && size != null) parts.push(fmtSize(size));
+      parts.push(fmtAge(now - (+card.dataset.when || now)));
+      const exp = +card.dataset.expiresAt;
+      if (exp) parts.push(fmtRemaining(exp - now));
+      return parts.join(' · ');
+    }
+
+    // Record a new expiry for a file (ours, or one another page changed) and
+    // redraw, so every card for that file shows the new time left.
+    function setExpiry(token, expiresSec) {
+      if (!expiresSec) return;
+      const ms = expiresSec * 1000;
+      expiresByToken.set(token, ms);
+      const arr = loadStore();
+      arr.forEach(it => { if (tokenOf(it.path) === token) it.expiresAt = ms; });
+      saveStore(arr);
+      sharedItems.forEach(it => { if (it.token === token) it.expires = expiresSec; });
+      renderShared();
+    }
+
     // ----- One card shape for both lists -----
     // `kind` decides only what × means and which extras the ⋯ row carries.
     function makeFileCard(it, kind) {
@@ -1279,15 +1360,11 @@
       card.className = 'hist-item';
       card.dataset.token = token;
 
-      let metaText;
-      if (kind === 'history') {
-        card.dataset.path = '/f/' + token;
-        card.dataset.uploadedAt = String(it.uploadedAt);
-        const age = Date.now() - it.uploadedAt;
-        metaText = `${fmtAge(age)} · ${fmtRemaining(MAX_AGE_MS - age)}`;
-      } else {
-        metaText = `${fmtSize(it.size)} · ${fmtAge(Date.now() - it.when)}`;
-      }
+      if (it.expiresAt) card.dataset.expiresAt = String(it.expiresAt);
+      if (kind === 'history') card.dataset.path = '/f/' + token;
+      card.dataset.when = String(it.when);
+      card.dataset.kind = kind;
+      const metaText = cardMeta(card, it.size);
 
       card.innerHTML = `
         <div class="hist-thumb-wrap">
@@ -1299,7 +1376,7 @@
             : `<div class="hist-thumb hist-thumb-text" tabindex="0">${escapeHtml(badge)}</div>`}
         </div>
         <div class="hist-name" title="${escapeHtml(it.filename)}">${escapeHtml(it.filename)}</div>
-        <div class="hist-meta">${metaText}</div>
+        <div class="hist-meta" data-size="${+it.size || 0}">${metaText}</div>
         <div class="hist-actions">
           <button type="button" class="copy">Copy</button>
           <a class="open" target="_blank" rel="noopener">Open</a>
@@ -1313,6 +1390,9 @@
           <button type="button" class="copy-md">Copy MD</button>
           <button type="button" class="share-btn">${isShared ? 'Unshare' : 'Share'}</button>
           <button type="button" class="destroy danger" title="Delete from the server">Delete</button>
+          <select class="keep" title="Change how long this file stays on the server">
+            <option value="">Keep for…</option>
+          </select>
         </div>
         <div class="hist-qr" hidden></div>
       `;
@@ -1374,6 +1454,23 @@
       };
 
       card.querySelector('.destroy').onclick = () => deleteTokens([token]);
+
+      const keep = card.querySelector('.keep');
+      expiryOptions(keep, null);
+      keep.onchange = async () => {
+        const hours = keep.value;
+        if (!hours) return;
+        keep.disabled = true;
+        try {
+          const r = await fetch(`/f/${encodeURIComponent(token)}/expiry`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hours: +hours }),
+          });
+          if (r.ok) setExpiry(token, (await r.json()).expires);
+          else if (r.status === 404) markStale('/f/' + token);
+        } catch (_) {}
+        if (keep.isConnected) { keep.disabled = false; keep.value = ''; }
+      };
       card.querySelector('.del').onclick = () => {
         if (kind === 'shared') unshareTokens([token]);
         else removeFromStore('/f/' + token);
@@ -1511,6 +1608,7 @@
         size: it.size,
         uploadedAt: it.uploadedAt,
         when: it.uploadedAt,
+        expiresAt: historyExpiry(it),
         batch: it.batchId || null,
       }));
       renderGroups(historyGrid, groupItems(items), 'history');
@@ -1531,13 +1629,11 @@
       const cards = Array.from(document.querySelectorAll('.hist-item'));
       let needsRerender = false;
       cards.forEach(card => {
-        const t = parseInt(card.dataset.uploadedAt, 10);
-        if (!t) return;
-        const age = Date.now() - t;
-        const remain = MAX_AGE_MS - age;
-        if (remain <= 0) { needsRerender = true; return; }
+        const exp = +card.dataset.expiresAt;
+        if (exp && exp <= Date.now() && card.dataset.kind === 'history') { needsRerender = true; return; }
         const meta = card.querySelector('.hist-meta');
-        if (meta) meta.textContent = `${fmtAge(age)} · ${fmtRemaining(remain)}`;
+        const size = meta && meta.dataset.size ? +meta.dataset.size : null;
+        if (meta) meta.textContent = cardMeta(card, size);
       });
       if (needsRerender) renderHistory();
     }, 60 * 1000);
@@ -1603,6 +1699,7 @@
         filename: it.filename,
         size: it.size,
         when: (it.at || 0) * 1000,
+        expiresAt: expiresByToken.get(it.token) || (it.expires ? it.expires * 1000 : null),
         batch: it.batch || null,
       }));
       renderGroups(sharedGrid, groupItems(items), 'shared');
@@ -1679,6 +1776,8 @@
         } else if (m.type === 'shared_del') {
           sharedItems = sharedItems.filter(i => i.token !== m.token);
           renderShared();
+        } else if (m.type === 'expiry') {
+          setExpiry(m.token, m.expires);
         } else if (m.type === 'presence') {
           setLive(true, describeClients(m.clients));
         } else if (m.type === 'error') {

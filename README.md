@@ -66,7 +66,10 @@ Edit `config.yaml`, then `make restart`:
 |-----|---------|--------------|
 | `app_name` | `share-it` | Name in the page header, the browser tab, and the installed app |
 | `app_color` | `#2563eb` | Accent color (`#rrggbb`) for the page, the app icon, and the app window bar |
-| `max_age_days` | `2` | Files older than this are swept on the next run |
+| `expiry_choices_hours` | `[1, 24, 48, 168, 720]` | How-long-to-keep choices on the page; `max_age_days` is the default |
+| `max_expiry_days` | `30` | Longest anyone can keep a file |
+| `show_all_files` | `false` in code | List every file on the server for everyone, not only shared ones |
+| `max_age_days` | `2` | Default lifetime when no other time is picked; swept on the next run after |
 | `max_upload_mb` | `1024` | Size cap for binary files |
 | `max_upload_mb_text` | `2` | Smaller cap for `.txt` / `.md` |
 | `cleanup_interval_sec` | `3600` | How often the sweeper runs |
@@ -97,7 +100,7 @@ export SHARE_IT_HOST=https://your-node.ts.net   # or http://localhost:3050
 
 ## API
 
-`POST /upload` takes a multipart `file`. Send `Accept: text/plain` for just the URL back.
+`POST /upload` takes a multipart `file`, plus an optional `expires_hours` (default `max_age_days`). Send `Accept: text/plain` for just the URL back. `POST /f/<token>/expiry` with `{"hours": 24}` changes how long a file stays, counted from now.
 
 ```bash
 curl -sf -H "Accept: text/plain" -F "file=@report.pdf" http://localhost:3050/upload

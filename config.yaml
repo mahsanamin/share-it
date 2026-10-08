@@ -29,6 +29,18 @@ token_bytes: 16
 # Live pad (the "Live" tab): size cap for the shared text buffer.
 pad_max_kb: 128
 
+# Per-file expiry. The page offers these choices (in hours) when uploading and
+# under a file's "Keep for" menu. max_age_days above is the default choice,
+# and nothing can be kept longer than max_expiry_days.
+expiry_choices_hours: [1, 24, 48, 168, 720]
+max_expiry_days: 30
+
+# Show every file on the server to everyone who opens the page, not only the
+# ones ticked as shared. Files already stored are listed at startup. Only turn
+# this on for an instance that just you (or people you trust) can reach.
+# The list still holds at most shared_max_items entries.
+show_all_files: true
+
 # How many entries the shared list holds before the oldest drop off it.
 # Dropping off the list does not delete the file; the sweeper still owns that.
 shared_max_items: 500

@@ -52,6 +52,17 @@ TEXT_EXTS = {e.lower().lstrip(".") for e in (cfg.get("text_extensions") or [])}
 IMAGE_EXTS = {e.lower().lstrip(".") for e in (cfg.get("image_extensions") or [])}
 PAD_MAX_KB = int(cfg.get("pad_max_kb", 128))
 SHARED_MAX_ITEMS = int(cfg.get("shared_max_items", 500))
+# Per-file expiry: the uploader picks one of these (in hours) on the page, and
+# can change it later. Nothing may live longer than max_expiry_days.
+MAX_EXPIRY_DAYS = float(cfg.get("max_expiry_days", 30))
+EXPIRY_CHOICES_HOURS = sorted(
+    {float(h) for h in (cfg.get("expiry_choices_hours") or [1, 24, 48, 168, 720])
+     if 0 < float(h) <= MAX_EXPIRY_DAYS * 24}
+    | {MAX_AGE_DAYS * 24}
+)
+# Every file on the server is listed for everyone, not only the ones ticked
+# as shared. Meant for a private instance only you (or your devices) use.
+SHOW_ALL_FILES = bool(cfg.get("show_all_files", False))
 
 HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -104,6 +115,7 @@ ZIP_DEFLATE_EXTS = {
 # directories (one per upload), so these are never swept away with the files.
 SHARED_PATH = DATA_DIR / "_shared.json"
 PAD_PATH = DATA_DIR / "_pad.txt"
+EXPIRY_PATH = DATA_DIR / "_expiry.json"
 PAD_MAX_BYTES = PAD_MAX_KB * 1024
 
 # Single source of truth: the repo-root VERSION file (copied next to the app in
@@ -168,6 +180,52 @@ except OSError as e:
 
 _shared_lock = asyncio.Lock()
 
+# Per-file expiry, as {token: unix time}. A file with no entry here expires
+# max_age_days after it was uploaded, which is how every file worked before.
+try:
+    _expiry: dict[str, float] = {
+        k: float(v) for k, v in json.loads(EXPIRY_PATH.read_text(encoding="utf-8")).items()
+    }
+except (OSError, ValueError, AttributeError, TypeError):
+    _expiry = {}
+
+
+def _save_expiry():
+    try:
+        tmp = EXPIRY_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(_expiry), encoding="utf-8")
+        tmp.replace(EXPIRY_PATH)
+    except OSError as e:
+        print(f"[expiry] could not save: {e}", flush=True)
+
+
+def _expires_at(token: str) -> float | None:
+    """When the file behind `token` will be swept, or None if it is gone."""
+    if token in _expiry:
+        return _expiry[token]
+    try:
+        return (DATA_DIR / token).stat().st_mtime + MAX_AGE_DAYS * 86400
+    except OSError:
+        return None
+
+
+def _ttl_seconds(hours) -> float | None:
+    """Parse an expiry in hours from a request. None means use the default."""
+    if hours in (None, ""):
+        return None
+    try:
+        h = float(hours)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "expiry must be a number of hours")
+    if not 0 < h <= MAX_EXPIRY_DAYS * 24:
+        raise HTTPException(400, f"expiry must be between 0 and {MAX_EXPIRY_DAYS * 24:g} hours")
+    return h * 3600
+
+
+def _with_expiry(items: list[dict]) -> list[dict]:
+    """Shared-list entries plus their current expiry, which can change later."""
+    return [{**it, "expires": _expires_at(it.get("token", ""))} for it in items]
+
 
 def _load_shared() -> list[dict]:
     try:
@@ -229,9 +287,25 @@ async def _add_shared(new_items: list[dict]) -> list[dict]:
             items = fresh + items
             del items[SHARED_MAX_ITEMS:]
             _write_shared(items)
-    for it in fresh:
+    for it in _with_expiry(fresh):
         await hub.broadcast({"type": "shared_add", "item": it})
     return fresh
+
+
+def _backfill_shared():
+    """With show_all_files on, put every file already on the server on the list."""
+    items, _ = _prune_shared(_load_shared())
+    have = {i.get("token") for i in items}
+    for entry in DATA_DIR.iterdir():
+        if not entry.is_dir() or entry.name in have or not TOKEN_RE.match(entry.name):
+            continue
+        f = _token_file(entry.name)
+        if f is None:
+            continue
+        items.append({"token": entry.name, "filename": f.name,
+                      "size": f.stat().st_size, "at": entry.stat().st_mtime})
+    items.sort(key=lambda i: i.get("at") or 0, reverse=True)
+    _write_shared(items[:SHARED_MAX_ITEMS])
 
 
 async def _drop_shared(tokens: list[str]) -> list[str]:
@@ -250,23 +324,30 @@ async def _drop_shared(tokens: list[str]) -> list[str]:
 
 async def cleanup_loop():
     print(
-        f"[cleanup] sweeper started: removing entries older than {MAX_AGE_DAYS} day(s) "
+        f"[cleanup] sweeper started: removing expired entries (default {MAX_AGE_DAYS} day(s)) "
         f"every {CLEANUP_INTERVAL_SEC}s",
         flush=True,
     )
     while True:
         try:
-            cutoff = time.time() - MAX_AGE_DAYS * 86400
+            now = time.time()
             removed = 0
             kept = 0
             for entry in DATA_DIR.iterdir():
                 if not entry.is_dir():
                     continue
-                if entry.stat().st_mtime < cutoff:
+                expires = _expires_at(entry.name)
+                if expires is not None and expires <= now:
                     shutil.rmtree(entry, ignore_errors=True)
                     removed += 1
                 else:
                     kept += 1
+            # Forget expiry times for files that are gone, however they went.
+            stale = [t for t in _expiry if not (DATA_DIR / t).is_dir()]
+            for t in stale:
+                del _expiry[t]
+            if stale:
+                _save_expiry()
             print(f"[cleanup] sweep done: removed={removed} kept={kept}", flush=True)
             if removed:
                 # Entries in the shared list now point at swept files; drop them
@@ -300,6 +381,8 @@ async def pad_flush_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if SHOW_ALL_FILES:
+        _backfill_shared()
     tasks = [asyncio.create_task(cleanup_loop()), asyncio.create_task(pad_flush_loop())]
     try:
         yield
@@ -337,7 +420,7 @@ def version():
 def stats():
     files = 0
     total = 0
-    oldest = None
+    soonest = None
     for entry in DATA_DIR.iterdir():
         if not entry.is_dir():
             continue
@@ -345,10 +428,12 @@ def stats():
             if f.is_file():
                 files += 1
                 total += f.stat().st_size
-        m = entry.stat().st_mtime
-        oldest = m if oldest is None else min(oldest, m)
-    oldest_expires = (oldest + MAX_AGE_DAYS * 86400) if oldest is not None else None
-    return {"files": files, "bytes": total, "oldest_expires": oldest_expires}
+        e = _expires_at(entry.name)
+        if e is not None:
+            soonest = e if soonest is None else min(soonest, e)
+    # Named for what the page always showed; with per-file expiry it is the
+    # next file due to go, which is no longer always the oldest one.
+    return {"files": files, "bytes": total, "oldest_expires": soonest}
 
 
 def _qr_svg(data: str, box: int = 4, border: int = 2) -> str:
@@ -597,6 +682,12 @@ async def share_target(request: Request):
             received.append(await _save_upload(f))
         except HTTPException as e:
             print(f"[share-target] skipped {f.filename}: {e.detail}", flush=True)
+    if SHOW_ALL_FILES and received:
+        now = time.time()
+        await _add_shared([
+            {"token": r["token"], "filename": r["filename"], "size": r["size"], "at": now}
+            for r in received
+        ])
     text = "\n".join(
         str(form.get(k) or "").strip() for k in ("title", "text", "url")
         if str(form.get(k) or "").strip()
@@ -619,6 +710,8 @@ def index(request: Request):
             "app_name": APP_NAME,
             "app_color": APP_COLOR,
             "app_ink": APP_INK,
+            "show_all_files": SHOW_ALL_FILES,
+            "expiry_choices_hours": EXPIRY_CHOICES_HOURS,
             "max_upload_mb": MAX_UPLOAD_MB,
             "max_upload_mb_text": MAX_UPLOAD_MB_TEXT,
             "max_age_days": MAX_AGE_DAYS,
@@ -666,10 +759,15 @@ async def upload(
     file: UploadFile = File(...),
     shared: str | None = Form(None),
     batch: str | None = Form(None),
+    expires_hours: str | None = Form(None),
 ):
+    ttl = _ttl_seconds(expires_hours)  # refuse a bad value before storing anything
     saved = await _save_upload(file)
     token, path, filename, written = saved["token"], saved["path"], saved["filename"], saved["size"]
-    is_shared = str(shared or "").lower() in {"1", "true", "on", "yes"}
+    if ttl is not None:
+        _expiry[token] = time.time() + ttl
+        _save_expiry()
+    is_shared = SHOW_ALL_FILES or str(shared or "").lower() in {"1", "true", "on", "yes"}
     if is_shared:
         item = {"token": token, "filename": filename, "size": written, "at": time.time()}
         # The browser sends one request per file but stamps them all with the
@@ -686,7 +784,8 @@ async def upload(
         url = str(request.base_url).rstrip("/") + path
         return PlainTextResponse(url + "\n")
     return JSONResponse(
-        {"path": path, "filename": filename, "size": written, "shared": is_shared}
+        {"path": path, "filename": filename, "size": written, "shared": is_shared,
+         "expires": _expires_at(token)}
     )
 
 
@@ -697,7 +796,7 @@ async def shared_list():
         items, gone = _prune_shared(_load_shared())
         if gone:
             _write_shared(items)
-    return {"items": items}
+    return {"items": _with_expiry(items)}
 
 
 @app.post("/shared")
@@ -829,7 +928,7 @@ async def ws(websocket: WebSocket):
                     "type": "init",
                     "you": cid,
                     "pad": pad,
-                    "shared": items,
+                    "shared": _with_expiry(items),
                     "clients": len(hub.clients),
                     "pad_max_kb": PAD_MAX_KB,
                 }
@@ -893,8 +992,34 @@ async def delete_file(token: str):
     shutil.rmtree(folder, ignore_errors=True)
     if folder.exists():
         raise HTTPException(500, "could not delete that file")
+    if _expiry.pop(token, None) is not None:
+        _save_expiry()
     await _drop_shared([token])
     return {"ok": True, "token": token}
+
+
+@app.post("/f/{token}/expiry")
+async def set_expiry(token: str, request: Request):
+    """Change how long a file lives, counted from now. Body: `{"hours": 24}`.
+
+    Anyone who can reach the page can do this, the same as Delete. Every open
+    page is told, so the time left on its card stays right.
+    """
+    if _token_file(token) is None:
+        raise HTTPException(404)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise HTTPException(400, 'expected {"hours": <number>}')
+    ttl = _ttl_seconds(body.get("hours"))
+    if ttl is None:
+        raise HTTPException(400, 'expected {"hours": <number>}')
+    _expiry[token] = time.time() + ttl
+    _save_expiry()
+    await hub.broadcast({"type": "expiry", "token": token, "expires": _expiry[token]})
+    return {"token": token, "expires": _expiry[token]}
 
 
 # ---------------------------------------------------------------------------
