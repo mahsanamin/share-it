@@ -1,4 +1,5 @@
 import asyncio
+import io
 import json
 import os
 import re
@@ -7,8 +8,9 @@ import shutil
 import time
 import zipfile
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import qrcode
 import yaml
@@ -28,10 +30,12 @@ from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
+    RedirectResponse,
     Response,
     StreamingResponse,
 )
 from fastapi.templating import Jinja2Templates
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "/app/config.yaml")
 with open(CONFIG_PATH) as f:
@@ -49,10 +53,30 @@ IMAGE_EXTS = {e.lower().lstrip(".") for e in (cfg.get("image_extensions") or [])
 PAD_MAX_KB = int(cfg.get("pad_max_kb", 128))
 SHARED_MAX_ITEMS = int(cfg.get("shared_max_items", 500))
 
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _hex_color(value, default: str) -> str:
+    """A `#rrggbb` color from config, or the default if it is anything else."""
+    v = str(value or "").strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{3}", v):
+        v = "#" + "".join(c * 2 for c in v[1:])
+    if HEX_RE.match(v):
+        return v.lower()
+    if v:
+        print(f"[config] app_color {value!r} is not #rrggbb, using {default}", flush=True)
+    return default
+
+
+# Identity of this instance. Several share-its on different domains install as
+# separate apps; a name and a color per instance is how you tell them apart.
+APP_NAME = str(cfg.get("app_name") or "share-it").strip()[:40] or "share-it"
+APP_COLOR = _hex_color(cfg.get("app_color"), "#2563eb")
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 BATCH_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-FAVICON_PATH = Path(__file__).parent / "favicon.svg"
+STATIC_DIR = Path(__file__).parent / "static"
 
 # Bulk download. The tokens ride in the query string so a plain link can start
 # the save, which makes the request line — not storage — the binding limit.
@@ -360,14 +384,229 @@ def qr(data: str):
     )
 
 
+# ---------------------------------------------------------------------------
+# Installable app: manifest, service worker, and icons in this instance's color.
+#
+# The icons are drawn here rather than shipped as files, so changing
+# `app_color` in config.yaml recolors the favicon, the app icon and the window
+# bar together, with nothing to regenerate by hand.
+# ---------------------------------------------------------------------------
+
+
+def _rgb(hex_color: str) -> tuple[int, int, int]:
+    return tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _mix(rgb, other, t: float) -> tuple[int, int, int]:
+    return tuple(round(a + (b - a) * t) for a, b in zip(rgb, other))
+
+
+def _hex(rgb) -> str:
+    return "#" + "".join(f"{c:02x}" for c in rgb)
+
+
+BASE_RGB = _rgb(APP_COLOR)
+# The icon runs from a lighter tint at the top left to a darker shade at the
+# bottom right, the same shape the original blue icon had.
+ICON_LIGHT = _hex(_mix(BASE_RGB, (255, 255, 255), 0.4))
+ICON_DARK = _hex(_mix(BASE_RGB, (0, 0, 0), 0.2))
+
+
+def _ink_for(rgb) -> str:
+    """Black or white, whichever reads better on top of `rgb`."""
+    def lin(c):
+        c /= 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    lum = 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])
+    return "#000000" if lum > 0.4 else "#ffffff"
+
+
+APP_INK = _ink_for(BASE_RGB)
+ICON_INK = _ink_for(_rgb(ICON_DARK))
+ICON_SIZES = (180, 192, 512)
+
+# The share glyph in a 64-unit box: two strokes and three dots.
+_GLYPH = """
+    <line x1="20" y1="32" x2="44" y2="18"/>
+    <line x1="20" y1="32" x2="44" y2="46"/>
+    <circle cx="20" cy="32" r="9"/>
+    <circle cx="44" cy="18" r="9"/>
+    <circle cx="44" cy="46" r="9"/>"""
+
+
+def _icon_svg(maskable: bool = False) -> str:
+    # A maskable icon fills the whole square (the launcher cuts its own shape)
+    # and keeps the glyph inside the middle 80%, so no launcher crops it.
+    rect = '<rect width="64" height="64" fill="url(#bg)"/>' if maskable else \
+        '<rect width="64" height="64" rx="13" fill="url(#bg)"/>'
+    glyph_tf = ' transform="translate(32 32) scale(0.68) translate(-32 -32)"' if maskable else ""
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" '
+        f'aria-label="{APP_NAME}">'
+        '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0%" stop-color="{ICON_LIGHT}"/>'
+        f'<stop offset="100%" stop-color="{ICON_DARK}"/>'
+        f'</linearGradient></defs>{rect}'
+        f'<g{glyph_tf} stroke="{ICON_INK}" stroke-width="6" stroke-linecap="round" '
+        f'fill="{ICON_INK}">{_GLYPH}</g></svg>'
+    )
+
+
+@lru_cache(maxsize=None)
+def _icon_png(size: int, maskable: bool) -> bytes:
+    """The same icon as `_icon_svg`, as a PNG. Android wants PNG app icons."""
+    from PIL import Image, ImageDraw
+
+    ss = 4  # draw big and scale down, which smooths the edges
+    big = size * ss
+    unit = big / 64
+
+    # Diagonal gradient: computed small, then scaled up, which stays smooth.
+    light, dark = _rgb(ICON_LIGHT), _rgb(ICON_DARK)
+    grad = Image.new("RGB", (64, 64))
+    grad.putdata([_mix(light, dark, (x + y) / 126) for y in range(64) for x in range(64)])
+    grad = grad.resize((big, big), Image.BICUBIC)
+
+    mask = Image.new("L", (big, big), 0)
+    if maskable:
+        mask.paste(255, (0, 0, big, big))
+    else:
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, big - 1, big - 1), radius=13 * unit, fill=255)
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    img.paste(grad, (0, 0), mask)
+
+    scale = 0.68 if maskable else 1.0
+
+    def pt(x, y):
+        return ((32 + (x - 32) * scale) * unit, (32 + (y - 32) * scale) * unit)
+
+    ink = _rgb(ICON_INK)
+    draw = ImageDraw.Draw(img)
+    width = round(6 * scale * unit)
+    for end in ((44, 18), (44, 46)):
+        draw.line([pt(20, 32), pt(*end)], fill=ink, width=width)
+    r = 12 * scale * unit  # radius 9 plus half the 6-unit stroke
+    for cx, cy in ((20, 32), (44, 18), (44, 46)):
+        x, y = pt(cx, cy)
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=ink)
+
+    img = img.resize((size, size), Image.LANCZOS)
+    if maskable or size == 180:
+        # Apple touch icons and maskable icons should be opaque.
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
+
+
+ICON_CACHE = {"Cache-Control": "public, max-age=86400"}
+
+
 @app.get("/favicon.svg")
 def favicon():
-    return FileResponse(FAVICON_PATH, media_type="image/svg+xml")
+    return Response(_icon_svg(), media_type="image/svg+xml", headers=ICON_CACHE)
 
 
 @app.get("/favicon.ico")
 def favicon_ico():
-    return FileResponse(FAVICON_PATH, media_type="image/svg+xml")
+    return Response(_icon_svg(), media_type="image/svg+xml", headers=ICON_CACHE)
+
+
+@app.get("/icons/{kind}-{size}.png")
+def icon_png(kind: str, size: int):
+    if kind not in {"icon", "maskable"} or size not in ICON_SIZES:
+        raise HTTPException(404)
+    return Response(_icon_png(size, kind == "maskable"), media_type="image/png", headers=ICON_CACHE)
+
+
+@app.get("/apple-touch-icon.png")
+def apple_touch_icon():
+    return Response(_icon_png(180, True), media_type="image/png", headers=ICON_CACHE)
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    """Built per instance, so each domain installs under its own name and color.
+
+    The browser keys an installed app to its origin (`id` "/" resolves against
+    the domain), so two share-its on two domains are always two separate apps.
+    """
+    icons = [
+        {"src": f"/icons/{kind}-{size}.png", "sizes": f"{size}x{size}",
+         "type": "image/png", "purpose": "maskable" if kind == "maskable" else "any"}
+        for kind in ("icon", "maskable") for size in (192, 512)
+    ]
+    small = [{"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"}]
+    body = {
+        "id": "/",
+        "name": APP_NAME,
+        "short_name": APP_NAME,
+        "description": "Drop a file, get a link. Plus a live clipboard shared across your devices.",
+        "start_url": "/?source=app",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": APP_COLOR,
+        "theme_color": APP_COLOR,
+        # A launch, a shortcut, or a share reuses the open window, not a new one.
+        "launch_handler": {"client_mode": "navigate-existing"},
+        "icons": icons,
+        "shortcuts": [
+            {"name": "Upload files", "url": "/?tab=files", "icons": small},
+            {"name": "Share text", "url": "/?tab=text", "icons": small},
+            {"name": "Live clipboard", "url": "/?tab=live", "icons": small},
+        ],
+        # Android lists the installed app in its Share menu. See static/sw.js.
+        "share_target": {
+            "action": "/share-target",
+            "method": "POST",
+            "enctype": "multipart/form-data",
+            "params": {
+                "title": "title",
+                "text": "text",
+                "url": "url",
+                "files": [{"name": "files", "accept": ["*/*"]}],
+            },
+        },
+    }
+    return JSONResponse(body, media_type="application/manifest+json",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from the root so its scope covers the whole site. `no-cache` lets
+    # a new version of the worker reach installed apps on their next launch.
+    return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/share-target")
+async def share_target(request: Request):
+    """Fallback for a share that the service worker did not catch.
+
+    Normally the worker takes the POST and the page uploads the files itself.
+    If the worker is missing (first launch, or it was cleared), the server
+    saves the files directly and the page adds them to its history.
+    """
+    form = await request.form()
+    received = []
+    for f in form.getlist("files"):
+        if not isinstance(f, StarletteUploadFile) or not f.filename:
+            continue
+        try:
+            received.append(await _save_upload(f))
+        except HTTPException as e:
+            print(f"[share-target] skipped {f.filename}: {e.detail}", flush=True)
+    text = "\n".join(
+        str(form.get(k) or "").strip() for k in ("title", "text", "url")
+        if str(form.get(k) or "").strip()
+    )
+    params = {"share-target": "server"}
+    if received:
+        params["received"] = json.dumps(received, separators=(",", ":"))
+    if text:
+        params["text"] = text[:4000]
+    return RedirectResponse("/?" + urlencode(params), status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -377,6 +616,9 @@ def index(request: Request):
         {
             "request": request,
             "version": APP_VERSION,
+            "app_name": APP_NAME,
+            "app_color": APP_COLOR,
+            "app_ink": APP_INK,
             "max_upload_mb": MAX_UPLOAD_MB,
             "max_upload_mb_text": MAX_UPLOAD_MB_TEXT,
             "max_age_days": MAX_AGE_DAYS,
@@ -388,13 +630,8 @@ def index(request: Request):
     )
 
 
-@app.post("/upload")
-async def upload(
-    request: Request,
-    file: UploadFile = File(...),
-    shared: str | None = Form(None),
-    batch: str | None = Form(None),
-):
+async def _save_upload(file: UploadFile) -> dict:
+    """Store one uploaded file under a new token. Raises HTTPException on refusal."""
     filename = Path(file.filename or "file").name or "file"
     ext = Path(filename).suffix.lower().lstrip(".")
     if ext in BLOCKED_EXTS:
@@ -420,7 +657,18 @@ async def upload(
         shutil.rmtree(folder, ignore_errors=True)
         raise
 
-    path = f"/f/{token}"
+    return {"token": token, "path": f"/f/{token}", "filename": filename, "size": written}
+
+
+@app.post("/upload")
+async def upload(
+    request: Request,
+    file: UploadFile = File(...),
+    shared: str | None = Form(None),
+    batch: str | None = Form(None),
+):
+    saved = await _save_upload(file)
+    token, path, filename, written = saved["token"], saved["path"], saved["filename"], saved["size"]
     is_shared = str(shared or "").lower() in {"1", "true", "on", "yes"}
     if is_shared:
         item = {"token": token, "filename": filename, "size": written, "at": time.time()}

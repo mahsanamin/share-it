@@ -1,5 +1,12 @@
 # share-it config
 
+# What this instance is called and its color. When you run share-it on more
+# than one domain, give each its own name and color: they install as separate
+# apps, and these are what the app icon, the window bar and the page use, so
+# you can tell them apart at a glance. Color is #rrggbb.
+app_name: share-it
+app_color: "#2563eb"
+
 # Where uploaded files are stored inside the container.
 # Mounted to ./data on the host via docker-compose.
 data_dir: /data

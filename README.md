@@ -64,6 +64,8 @@ Edit `config.yaml`, then `make restart`:
 
 | Key | Default | What it does |
 |-----|---------|--------------|
+| `app_name` | `share-it` | Name in the page header, the browser tab, and the installed app |
+| `app_color` | `#2563eb` | Accent color (`#rrggbb`) for the page, the app icon, and the app window bar |
 | `max_age_days` | `2` | Files older than this are swept on the next run |
 | `max_upload_mb` | `1024` | Size cap for binary files |
 | `max_upload_mb_text` | `2` | Smaller cap for `.txt` / `.md` |
@@ -73,6 +75,16 @@ Edit `config.yaml`, then `make restart`:
 | `shared_max_items` | `500` | Entries the shared list holds before the oldest drop off |
 
 Host-port binding lives in a gitignored `.env` (`cp .env.example .env` to change `BIND_ADDR` or `HOST_PORT`).
+
+## Install it as an app
+
+share-it can be installed like a desktop or phone app. It gets its own window and an icon in the Dock, taskbar or app drawer. This needs HTTPS (or `localhost`).
+
+- **Mac / Windows:** open it in Chrome or Edge, then click the install icon in the address bar (or menu, then "Install share-it"). Right-click the app icon for shortcuts to the Files, Text and Live tabs.
+- **Android:** open it in Chrome, then menu, then "Install app". After that, share-it appears in the Android Share menu: share a photo, file or link from any app and it uploads (files) or opens in the Text tab (text and links).
+- **iPhone:** Safari, Share, "Add to Home Screen". iOS does not let web apps join the Share menu.
+
+Running more than one instance? Each domain installs as a separate app with its own history. Give each one its own `app_name` and `app_color` so the icons and windows are easy to tell apart.
 
 ## Shell helper
 

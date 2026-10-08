@@ -3,10 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>share-it</title>
+  <title>{{ app_name }}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="theme-color" content="{{ app_color }}" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="{{ app_name }}" />
   <style>
-    :root { color-scheme: light dark; }
+    /* --accent comes from app_color in config.yaml, so each instance has its
+       own color: the top stripe, buttons, tabs, the icon and the window bar. */
+    :root { color-scheme: light dark; --accent: {{ app_color }}; --accent-ink: {{ app_ink }}; }
     * { box-sizing: border-box; }
     /* The `hidden` attribute must always win, even over `display:flex` etc. */
     [hidden] { display: none !important; }
@@ -14,7 +21,13 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       max-width: 640px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5;
     }
-    h1 { margin: 0 0 1rem; font-size: 1.5rem; }
+    body::before {
+      content: ""; position: fixed; top: 0; left: 0; right: 0; height: 4px;
+      background: var(--accent); z-index: 50;
+    }
+    h1 { margin: 0 0 1rem; font-size: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    h1 img { width: 1.6rem; height: 1.6rem; }
+    h1 .host { font-size: 0.8rem; font-weight: 400; opacity: 0.6; }
     .warn {
       background: #fff4cc; color: #5a4500; border: 1px solid #e6c200;
       padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1.5rem;
@@ -34,7 +47,7 @@
       border: 2px dashed #888; border-radius: 10px; cursor: pointer;
       text-align: center; transition: background 0.15s, border-color 0.15s;
     }
-    .drop:hover, .drop.drag { border-color: #2563eb; background: rgba(37,99,235,0.08); }
+    .drop:hover, .drop.drag { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
     .drop .big { font-size: 1.1rem; font-weight: 600; }
     .drop .sub { font-size: 0.85rem; opacity: 0.7; }
     .drop .picked { font-size: 0.95rem; word-break: break-all; }
@@ -42,7 +55,7 @@
     .actions { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
     button.primary {
       padding: 0.4rem 0.9rem; font-size: 0.9rem; cursor: pointer;
-      border: 0; border-radius: 6px; background: #2563eb; color: white;
+      border: 0; border-radius: 6px; background: var(--accent); color: var(--accent-ink);
     }
     button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
     button.ghost, a.ghost {
@@ -80,7 +93,7 @@
            border: 0; border-bottom: 2px solid transparent; background: transparent;
            color: inherit; opacity: 0.55; margin-bottom: -1px; }
     .tab:hover { opacity: 0.85; }
-    .tab.active { opacity: 1; font-weight: 600; border-bottom-color: #2563eb; }
+    .tab.active { opacity: 1; font-weight: 600; border-bottom-color: var(--accent); }
 
     .text-panel { display: flex; flex-direction: column; gap: 0.6rem; }
     .text-panel textarea {
@@ -101,7 +114,7 @@
     .share-toggle { display: flex; align-items: flex-start; gap: 0.5rem;
                     margin: -0.25rem 0 0.9rem; font-size: 0.85rem; }
     .share-toggle input { margin: 0.15rem 0 0; width: 1rem; height: 1rem;
-                          accent-color: #2563eb; flex: 0 0 auto; cursor: pointer; }
+                          accent-color: var(--accent); flex: 0 0 auto; cursor: pointer; }
     .share-toggle label { cursor: pointer; }
     .share-toggle .sub { display: block; opacity: 0.6; font-size: 0.78rem; }
 
@@ -160,7 +173,7 @@
                         font-weight: 500; min-width: 0; }
     .hist-group-label input[type=checkbox] {
       margin: 0; width: 0.95rem; height: 0.95rem;
-      accent-color: #2563eb; cursor: pointer; flex: 0 0 auto;
+      accent-color: var(--accent); cursor: pointer; flex: 0 0 auto;
     }
     .hist-group-actions { display: flex; gap: 0.3rem; flex-wrap: wrap;
                           justify-content: flex-end; margin-left: auto; }
@@ -210,12 +223,12 @@
     }
     .hist-pick input[type=checkbox] {
       margin: 0; width: 1rem; height: 1rem;
-      accent-color: #2563eb; cursor: pointer;
+      accent-color: var(--accent); cursor: pointer;
     }
     .hist-item.picked {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 2px rgba(37,99,235,0.35);
-      background: rgba(37,99,235,0.07);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+      background: color-mix(in srgb, var(--accent) 7%, transparent);
     }
     /* Action bar: appears only once something is selected. Pinned to the
        viewport, so it is reachable from anywhere on a long page. */
@@ -225,7 +238,7 @@
       width: min(calc(100vw - 2rem), 640px);
       display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
       padding: 0.6rem 0.75rem;
-      border: 1px solid #2563eb; border-radius: 8px;
+      border: 1px solid var(--accent); border-radius: 8px;
       background: #dbeafe; color: #0b1220;
       box-shadow: 0 4px 20px rgba(0,0,0,0.25);
       font-size: 0.85rem;
@@ -242,14 +255,14 @@
       background: transparent; color: inherit; cursor: pointer;
     }
     #selectBar button:hover { background: rgba(127,127,127,0.15); }
-    #selectBar button.go { background: #2563eb; color: #fff; border-color: #2563eb; }
+    #selectBar button.go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
     .hist-thumb {
       width: 100%; height: 100%; object-fit: cover; border-radius: 4px;
       background: rgba(127,127,127,0.15); cursor: zoom-in; display: block;
       transition: box-shadow 0.12s ease-out, filter 0.12s ease-out;
     }
     .hist-thumb:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.2); filter: brightness(1.05); }
-    .hist-thumb:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .hist-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .hist-thumb-text {
       display: flex; align-items: center; justify-content: center;
       width: 100%; height: 100%; border-radius: 4px;
@@ -261,7 +274,7 @@
       transition: box-shadow 0.12s ease-out, filter 0.12s ease-out;
     }
     .hist-thumb-text:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.2); filter: brightness(1.15); }
-    .hist-thumb-text:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .hist-thumb-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .hist-name { font-size: 0.8rem; line-height: 1.25; word-break: break-all;
                  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
                  -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -339,7 +352,7 @@
     #lightboxText.md li.task-item { list-style: none; margin-left: -1.4rem; padding-left: 0; }
     #lightboxText.md li.task-item input[type=checkbox] {
       margin: 0 0.55rem 0 0; width: 1rem; height: 1rem;
-      vertical-align: -2px; accent-color: #2563eb;
+      vertical-align: -2px; accent-color: var(--accent);
     }
     #lightboxText.md a { color: #60a5fa; text-decoration: underline; text-underline-offset: 2px; }
     #lightboxText.md strong { font-weight: 700; }
@@ -380,7 +393,7 @@
   </style>
 </head>
 <body>
-  <h1>share-it</h1>
+  <h1><img src="/favicon.svg" alt="" />{{ app_name }}<span class="host" id="hostName"></span></h1>
   <div class="warn">
     <strong>Warning:</strong> anyone with the link can download these files.
     Files are deleted after {{ max_age_days }} day(s).
@@ -1710,6 +1723,70 @@
         const j = await r.json();
         applyRemotePad(j.text || '', j.rev || 0);
       } catch (_) {}
+    }
+
+    // ----- Installed app: service worker, shortcuts, and the share sheet -----
+    document.getElementById('hostName').textContent = location.host;
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
+    // App shortcuts (right-click the dock or taskbar icon) open a given tab.
+    const launch = new URLSearchParams(location.search);
+    if (TABS[launch.get('tab')]) selectTab(launch.get('tab'));
+
+    function fillSnippet(text) {
+      if (!text) return;
+      selectTab('text');
+      snippetText.value = text;
+      snippetShare.disabled = !text.trim();
+    }
+
+    // Something was shared to the app from another app (Android Share menu).
+    // The service worker parked it in a cache; upload it the normal way.
+    async function takeSharedInbox() {
+      const cache = await caches.open('share-inbox');
+      const metaResp = await cache.match('/share-inbox/meta');
+      if (!metaResp) return;
+      const meta = await metaResp.json();
+      const files = [];
+      for (const f of meta.files || []) {
+        const r = await cache.match(f.key);
+        if (r) files.push(new File([await r.blob()], f.name, { type: f.type }));
+      }
+      for (const key of await cache.keys()) await cache.delete(key);
+      const text = [meta.title, meta.text, meta.url]
+        .map(s => (s || '').trim()).filter(Boolean)
+        .filter((s, i, all) => all.indexOf(s) === i).join('\n');
+      if (files.length) stageAndUpload(files);
+      else fillSnippet(text);
+    }
+
+    // The server saved the share itself (no service worker was running).
+    function takeServerShare() {
+      let received = [];
+      try { received = JSON.parse(launch.get('received') || '[]'); } catch (_) {}
+      // This arrives in the URL, so anyone could craft the link. Keep only
+      // entries shaped like what /share-target produces: a /f/<token> path.
+      const TOKEN_PATH = /^\/f\/[A-Za-z0-9_-]+$/;
+      received = (Array.isArray(received) ? received : [])
+        .filter(j => j && typeof j.path === 'string' && TOKEN_PATH.test(j.path)
+          && typeof j.filename === 'string' && Number.isFinite(j.size))
+        .slice(0, 50)
+        .map(j => ({ path: j.path, filename: j.filename.slice(0, 255), size: j.size }));
+      const batchId = received.length > 1 ? newBatchId() : undefined;
+      received.forEach(j => addToStore({
+        path: j.path, filename: j.filename, size: j.size, uploadedAt: Date.now(), batchId,
+      }));
+      if (!received.length) fillSnippet(launch.get('text') || '');
+    }
+
+    if (launch.has('share-target')) {
+      if (launch.get('share-target') === 'server') takeServerShare();
+      else if ('caches' in window) takeSharedInbox().catch(() => {});
+      // Drop the query so a reload does not handle the same share twice.
+      history.replaceState(null, '', '/');
     }
 
     renderHistory();
